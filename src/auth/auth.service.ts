@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 
+const AUTH_TIMEOUT_MS = 30_000;
+
 interface TokenResponse {
   access_token: string;
   expires_in: number;
@@ -66,6 +68,7 @@ export class AuthService {
 
     const response = await axios.post<TokenResponse>(this.authUrl, body, {
       headers: { 'Content-Type': 'application/json' },
+      timeout: AUTH_TIMEOUT_MS,
     });
 
     const { access_token, expires_in, rest_instance_url } = response.data;
