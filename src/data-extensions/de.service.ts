@@ -13,6 +13,20 @@ export interface DeRowsResponse {
   items: Array<Record<string, unknown>>;
 }
 
+export interface DeListResponse {
+  count: number;
+  page: number;
+  pageSize: number;
+  items: Array<{
+    name: string;
+    externalKey: string;
+    description?: string;
+    isSendable?: boolean;
+    isTestable?: boolean;
+    fields?: Array<Record<string, unknown>>;
+  }>;
+}
+
 export interface DeCreateBody {
   name: string;
   externalKey?: string;
@@ -33,6 +47,18 @@ export interface DeCreateBody {
 @Injectable()
 export class DeService {
   constructor(private readonly http: SfmcHttpService) {}
+
+  async listDataExtensions(
+    options: { page?: number; pageSize?: number; nameFilter?: string } = {},
+  ): Promise<DeListResponse> {
+    const params: Record<string, unknown> = {
+      $page: options.page ?? 1,
+      $pageSize: options.pageSize ?? 50,
+    };
+    if (options.nameFilter) params.$filter = `name like '${options.nameFilter}'`;
+
+    return this.http.get<DeListResponse>('/data/v1/customobjectdata', params);
+  }
 
   async listRows(
     externalKey: string,

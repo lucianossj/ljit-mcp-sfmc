@@ -104,14 +104,16 @@ export class TransactionalService {
   ): Promise<DefinitionListResponse> {
     const allDefinitions: Array<Record<string, unknown>> = [];
     let page = 1;
+    const MAX_PAGES = 200;
 
-    while (true) {
+    while (page <= MAX_PAGES) {
       const params: Record<string, unknown> = { page, pageSize: options.pageSize };
       if (options.status) params.status = options.status;
 
       const result = await this.http.get<DefinitionListResponse>(`/messaging/v1/${channel}/definitions`, params);
-      allDefinitions.push(...result.definitions);
 
+      if (result.definitions.length === 0) break;
+      allDefinitions.push(...result.definitions);
       if (result.definitions.length < options.pageSize) break;
       page++;
     }

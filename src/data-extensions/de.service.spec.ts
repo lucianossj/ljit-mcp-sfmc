@@ -15,6 +15,50 @@ describe('DeService', () => {
   let svc: DeService;
   beforeEach(() => { svc = new DeService(http); });
 
+  describe('listDataExtensions', () => {
+    it('calls GET /data/v1/customobjectdata with default pagination', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
+
+      await svc.listDataExtensions();
+
+      expect(http.get).toHaveBeenCalledWith(
+        '/data/v1/customobjectdata',
+        { $page: 1, $pageSize: 50 },
+      );
+    });
+
+    it('passes custom page and pageSize', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
+
+      await svc.listDataExtensions({ page: 2, pageSize: 25 });
+
+      expect(http.get).toHaveBeenCalledWith(
+        '/data/v1/customobjectdata',
+        expect.objectContaining({ $page: 2, $pageSize: 25 }),
+      );
+    });
+
+    it('adds $filter when nameFilter is provided', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
+
+      await svc.listDataExtensions({ nameFilter: 'CMP_' });
+
+      expect(http.get).toHaveBeenCalledWith(
+        '/data/v1/customobjectdata',
+        expect.objectContaining({ $filter: "name like 'CMP_'" }),
+      );
+    });
+
+    it('does not include $filter when nameFilter is absent', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
+
+      await svc.listDataExtensions();
+
+      const params = (http.get as jest.Mock).mock.calls[0][1];
+      expect(params.$filter).toBeUndefined();
+    });
+  });
+
   describe('listRows', () => {
     it('calls correct endpoint with default pagination', async () => {
       (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
