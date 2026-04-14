@@ -16,46 +16,41 @@ describe('DeService', () => {
   beforeEach(() => { svc = new DeService(http); });
 
   describe('listDataExtensions', () => {
-    it('calls GET /data/v1/customobjectdata with default pagination', async () => {
-      (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
-
-      await svc.listDataExtensions();
-
-      expect(http.get).toHaveBeenCalledWith(
-        '/data/v1/customobjectdata',
-        { $page: 1, $pageSize: 50 },
-      );
-    });
-
-    it('passes custom page and pageSize', async () => {
-      (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
-
-      await svc.listDataExtensions({ page: 2, pageSize: 25 });
-
-      expect(http.get).toHaveBeenCalledWith(
-        '/data/v1/customobjectdata',
-        expect.objectContaining({ $page: 2, $pageSize: 25 }),
-      );
-    });
-
-    it('adds $filter when nameFilter is provided', async () => {
-      (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
+    it('calls GET /data/v1/customobjects with $search when nameFilter is provided', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ count: 0, page: 1, pageSize: 50, items: [] });
 
       await svc.listDataExtensions({ nameFilter: 'CMP_' });
 
       expect(http.get).toHaveBeenCalledWith(
-        '/data/v1/customobjectdata',
-        expect.objectContaining({ $filter: "name like 'CMP_'" }),
+        '/data/v1/customobjects',
+        { $page: 1, $pageSize: 50, $search: 'CMP_' },
       );
     });
 
-    it('does not include $filter when nameFilter is absent', async () => {
-      (http.get as jest.Mock).mockResolvedValue({ count: 0, items: [] });
+    it('passes custom page and pageSize', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ count: 0, page: 2, pageSize: 25, items: [] });
 
-      await svc.listDataExtensions();
+      await svc.listDataExtensions({ nameFilter: 'TEST', page: 2, pageSize: 25 });
 
-      const params = (http.get as jest.Mock).mock.calls[0][1];
-      expect(params.$filter).toBeUndefined();
+      expect(http.get).toHaveBeenCalledWith(
+        '/data/v1/customobjects',
+        expect.objectContaining({ $page: 2, $pageSize: 25 }),
+      );
+    });
+
+    it('throws when nameFilter is not provided', async () => {
+      await expect(svc.listDataExtensions()).rejects.toThrow('nameFilter é obrigatório');
+    });
+
+    it('normalizes response mapping key to externalKey', async () => {
+      (http.get as jest.Mock).mockResolvedValue({
+        count: 1, page: 1, pageSize: 50,
+        items: [{ id: 'uuid-1', name: 'TestDE', key: 'TEST_KEY', isSendable: true }],
+      });
+
+      const result = await svc.listDataExtensions({ nameFilter: 'Test' });
+
+      expect(result.items[0]).toMatchObject({ externalKey: 'TEST_KEY', name: 'TestDE' });
     });
   });
 
@@ -129,7 +124,7 @@ describe('DeService', () => {
   });
 
   describe('createDataExtension', () => {
-    it('calls POST /data/v1/customobjectdata with body', async () => {
+    it('calls POST /data/v1/customobjects with mapped body', async () => {
       (http.post as jest.Mock).mockResolvedValue({ requestId: 'abc' });
       const body = {
         name: 'TestDE',
@@ -138,19 +133,37 @@ describe('DeService', () => {
 
       await svc.createDataExtension(body);
 
-      expect(http.post).toHaveBeenCalledWith('/data/v1/customobjectdata', body);
+      expect(http.post).toHaveBeenCalledWith('/data/v1/customobjects', expect.objectContaining({ name: 'TestDE' }));
+    });
+
+    it('maps externalKey to key in request payload', async () => {
+      (http.post as jest.Mock).mockResolvedValue({ requestId: 'abc' });
+
+      await svc.createDataExtension({ name: 'TestDE', externalKey: 'MY_KEY', fields: [] });
+
+      expect(http.post).toHaveBeenCalledWith(
+        '/data/v1/customobjects',
+        expect.objectContaining({ key: 'MY_KEY' }),
+      );
     });
   });
 
   describe('getDataExtension', () => {
-    it('calls GET with encoded external key', async () => {
-      (http.get as jest.Mock).mockResolvedValue({ name: 'TestDE' });
+    it('searches by key and fetches by ID', async () => {
+      (http.get as jest.Mock)
+        .mockResolvedValueOnce({ items: [{ id: 'uuid-1', key: 'MY/KEY', name: 'TestDE' }] })
+        .mockResolvedValueOnce({ id: 'uuid-1', name: 'TestDE' });
 
       await svc.getDataExtension('MY/KEY');
 
-      expect(http.get).toHaveBeenCalledWith(
-        '/data/v1/customobjectdata/key/MY%2FKEY',
-      );
+      expect(http.get).toHaveBeenNthCalledWith(1, '/data/v1/customobjects', expect.objectContaining({ $search: 'MY/KEY' }));
+      expect(http.get).toHaveBeenNthCalledWith(2, '/data/v1/customobjects/uuid-1');
+    });
+
+    it('throws when DE is not found', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ items: [] });
+
+      await expect(svc.getDataExtension('UNKNOWN')).rejects.toThrow("não encontrada");
     });
   });
 });

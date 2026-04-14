@@ -22,11 +22,11 @@ export class DeToolsService {
   register(server: McpServer): void {
     server.tool(
       'de_list',
-      'Lista todas as Data Extensions disponíveis no SFMC. Suporta paginação e filtro por nome.',
+      'Lista Data Extensions do SFMC. O parâmetro nameFilter é obrigatório — informe um trecho do nome para busca (ex: "DEX_" para listar todas as DEs com esse prefixo). Suporta paginação.',
       {
         page: z.number().optional().default(1).describe('Número da página (padrão: 1)'),
         pageSize: z.number().optional().default(50).describe('Itens por página (padrão: 50, máx: 2500)'),
-        nameFilter: z.string().optional().describe('Filtrar por prefixo/trecho do nome da DE'),
+        nameFilter: z.string().describe('Filtrar por prefixo/trecho do nome da DE (obrigatório)'),
       },
       toolCall(({ page, pageSize, nameFilter }) =>
         this.deService.listDataExtensions({ page, pageSize, nameFilter }),
