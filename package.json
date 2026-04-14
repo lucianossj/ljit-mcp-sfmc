@@ -1,0 +1,59 @@
+{
+  "name": "ljit-mcp-sfmc",
+  "version": "1.0.0",
+  "description": "MCP server for Salesforce Marketing Cloud",
+  "main": "dist/src/main.js",
+  "bin": {
+    "ljit-mcp-sfmc": "dist/src/main.js"
+  },
+  "files": [
+    "dist/src/**/*.js",
+    "!dist/src/**/*.spec.js",
+    "dist/src/**/*.js.map",
+    "!dist/src/**/*.spec.js.map",
+    ".env.example"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "swc src -d dist --copy-files --source-maps && node scripts/postbuild.mjs",
+    "start": "node dist/src/main.js",
+    "dev": "node -r @swc-node/register src/main.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "lint": "eslint src --ext .ts"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {
+      "^.+\\.ts$": ["@swc/jest"]
+    },
+    "testRegex": "\\.spec\\.ts$",
+    "moduleFileExtensions": ["ts", "js", "json"]
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@nestjs/common": "^10.4.15",
+    "@nestjs/core": "^10.4.15",
+    "axios": "^1.7.9",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@swc-node/register": "^1.11.1",
+    "@swc/cli": "^0.8.1",
+    "@swc/core": "^1.15.24",
+    "@swc/jest": "^0.2.39",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.19.17",
+    "axios-mock-adapter": "^2.1.0",
+    "jest": "^30.3.0",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2021",
+    "lib": ["ES2021"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@auth/*": ["src/auth/*"],
+      "@sfmc/*": ["src/sfmc/*"],
+      "@mcp/*": ["src/mcp/*"],
+      "@de/*": ["src/data-extensions/*"],
+      "@cb/*": ["src/content-builder/*"],
+      "@transactional/*": ["src/transactional/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

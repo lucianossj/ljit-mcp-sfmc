@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json.schemastore.org/swcrc",
+  "sourceMaps": true,
+  "module": {
+    "type": "commonjs"
+  },
+  "jsc": {
+    "target": "es2021",
+    "parser": {
+      "syntax": "typescript",
+      "decorators": true,
+      "dynamicImport": true
+    },
+    "transform": {
+      "legacyDecorator": true,
+      "decoratorMetadata": true
+    },
+    "keepClassNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@auth/*": ["src/auth/*"],
+      "@sfmc/*": ["src/sfmc/*"],
+      "@mcp/*": ["src/mcp/*"],
+      "@de/*": ["src/data-extensions/*"],
+      "@cb/*": ["src/content-builder/*"],
+      "@transactional/*": ["src/transactional/*"]
+    }
+  }
+}
