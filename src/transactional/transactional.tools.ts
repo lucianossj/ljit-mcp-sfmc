@@ -10,6 +10,12 @@ const recipientSchema = z.object({
   attributes: z.record(z.unknown()).optional().describe('Atributos de personalização (pares chave-valor)'),
 });
 
+function generateMessageKey(): string {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `msg-${ts}-${rand}`;
+}
+
 @Injectable()
 export class TransactionalToolsService {
   constructor(private readonly svc: TransactionalService) {}
@@ -19,14 +25,15 @@ export class TransactionalToolsService {
 
     server.tool(
       'txn_list_definitions',
-      'Lista definições de Transactional Messaging para um canal específico (email, sms ou push).',
+      'Lista definições de Transactional Messaging para um canal específico (email, sms ou push). ' +
+      'Ao usar fetchAll=true, resultados de todas as BUs são retornados e deduplicados por definitionKey.',
       {
         channel: z.enum(['email', 'sms', 'push']).describe('Canal de envio'),
         page: z.number().optional().default(1),
         pageSize: z.number().optional().default(50),
         status: z.enum(['Active', 'Inactive']).optional().describe('Filtrar por status'),
         nameFilter: z.string().optional().describe('Filtrar por prefixo do nome da definição (ex: "CMP_EMM")'),
-        fetchAll: z.boolean().optional().default(false).describe('Varrer todas as páginas automaticamente e retornar resultados consolidados'),
+        fetchAll: z.boolean().optional().default(false).describe('Varrer todas as páginas automaticamente e retornar resultados consolidados e deduplicados por definitionKey'),
       },
       toolCall(({ channel, page, pageSize, status, nameFilter, fetchAll }) =>
         this.svc.listDefinitions(channel, { page, pageSize, status, nameFilter, fetchAll }),
@@ -179,7 +186,11 @@ export class TransactionalToolsService {
 
     server.tool(
       'txn_inspect_email_definition',
-      'Inspeciona uma definição de e-mail transacional: busca a definition, o asset vinculado no Content Builder e extrai o schema de atributos necessários (via análise do AMPscript). Use esta tool para entender quais atributos/payload o asset exige antes de enviar um e-mail de teste.',
+      'Inspeciona uma definição de e-mail transacional: busca a definition, o asset vinculado no Content Builder, ' +
+      'resolve recursivamente CONTENTBLOCKBYID() e CONTENTBLOCKBYNAME() referenciados, ' +
+      'extrai o schema de atributos necessários via análise AMPscript (incluindo guards RaiseError e paths dinâmicos), ' +
+      'e retorna os campos da DE vinculada para validação. ' +
+      'Use esta tool antes de enviar um e-mail de teste para entender o payload completo exigido.',
       {
         definitionKey: z.string().describe('Chave da definição de e-mail a inspecionar'),
       },
@@ -189,14 +200,46 @@ export class TransactionalToolsService {
     );
 
     server.tool(
-      'Envia um e-mail transacional para um único destinatário usando uma definição.',
+      'txn_validate_email_attributes',
+      'Valida e normaliza os nomes dos atributos de um envio de e-mail contra o schema da Data Extension vinculada à definition. ' +
+      'Retorna os atributos com nomes corrigidos (case matching) e alertas para campos não encontrados. ' +
+      'Use antes de txn_send_email para evitar erros MissingRequiredFields (código 19).',
       {
-        messageKey: z.string().describe('Chave única para esta mensagem (para idempotência e rastreamento)'),
+        definitionKey: z.string().describe('Chave da definição de e-mail'),
+        attributes: z.record(z.unknown()).describe('Atributos a serem validados e normalizados'),
+      },
+      toolCall(({ definitionKey, attributes }) =>
+        this.svc.validateAndNormalizeAttributes(definitionKey, attributes),
+      ),
+    );
+
+    server.tool(
+      'txn_send_email',
+      'Envia um e-mail transacional para um único destinatário usando uma definição. ' +
+      'Use txn_inspect_email_definition para descobrir os atributos necessários antes de enviar. ' +
+      'O messageKey é opcional e será gerado automaticamente se não informado.',
+      {
+        messageKey: z.string().optional().describe('Chave única para rastreamento (gerada automaticamente se omitida)'),
         definitionKey: z.string().describe('Chave da definição de e-mail a ser usada'),
         recipient: recipientSchema,
       },
       toolCall(({ messageKey, definitionKey, recipient }) =>
-        this.svc.sendEmail(messageKey, definitionKey, recipient),
+        this.svc.sendEmail(messageKey ?? generateMessageKey(), definitionKey, recipient),
+      ),
+    );
+
+    server.tool(
+      'txn_send_email_and_check',
+      'Envia um e-mail transacional e aguarda o status de entrega final (polling automático por até ~8s). ' +
+      'Retorna o resultado do envio e o status consolidado em uma única chamada, incluindo descrição legível do status. ' +
+      'Ideal para testes e validação de fluxo sem precisar chamar txn_get_message_status separadamente.',
+      {
+        messageKey: z.string().optional().describe('Chave única para rastreamento (gerada automaticamente se omitida)'),
+        definitionKey: z.string().describe('Chave da definição de e-mail a ser usada'),
+        recipient: recipientSchema,
+      },
+      toolCall(({ messageKey, definitionKey, recipient }) =>
+        this.svc.sendEmailAndCheck(messageKey ?? generateMessageKey(), definitionKey, recipient),
       ),
     );
 

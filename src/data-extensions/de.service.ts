@@ -148,4 +148,14 @@ export class DeService {
     }
     return this.http.get(`/data/v1/customobjects/${match['id']}`);
   }
+
+  /**
+   * Retorna a lista de nomes de campos de uma Data Extension pelo externalKey.
+   * Útil para validar/normalizar attribute names antes de um envio transacional.
+   */
+  async getDeFields(externalKey: string): Promise<string[]> {
+    const raw = await this.getDataExtension(externalKey) as Record<string, unknown>;
+    const fields = (raw['fields'] as Array<Record<string, unknown>> | undefined) ?? [];
+    return fields.map((f) => f['name'] as string).filter(Boolean);
+  }
 }

@@ -6,6 +6,6 @@ import { SfmcModule } from '../sfmc/sfmc.module';
 @Module({
   imports: [SfmcModule],
   providers: [DeService, DeToolsService],
-  exports: [DeToolsService],
+  exports: [DeService, DeToolsService],
 })
 export class DataExtensionsModule {}

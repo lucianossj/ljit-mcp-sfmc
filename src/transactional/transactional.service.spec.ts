@@ -1,5 +1,7 @@
 import { TransactionalService } from './transactional.service';
 import type { SfmcHttpService } from '../sfmc/sfmc-http.service';
+import type { CbService } from '../content-builder/cb.service';
+import type { DeService } from '../data-extensions/de.service';
 
 const http = {
   get: jest.fn(),
@@ -9,11 +11,21 @@ const http = {
   delete: jest.fn(),
 } as unknown as SfmcHttpService;
 
+const cb = {
+  getAssetByCustomerKey: jest.fn(),
+  getAsset: jest.fn(),
+} as unknown as CbService;
+
+const de = {
+  getDeFields: jest.fn(),
+  getDataExtension: jest.fn(),
+} as unknown as DeService;
+
 beforeEach(() => jest.clearAllMocks());
 
 describe('TransactionalService', () => {
   let svc: TransactionalService;
-  beforeEach(() => { svc = new TransactionalService(http); });
+  beforeEach(() => { svc = new TransactionalService(http, cb, de); });
 
   // ─── listDefinitions ────────────────────────────────────────────────────────
 
@@ -257,5 +269,56 @@ describe('TransactionalService', () => {
         );
       },
     );
+
+    it('enriches response with statusDescription when statusCode is present', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ statusCode: 103, eventCategoryType: 'TransactionalSendEvents.EmailNotSent' });
+
+      const result = await svc.getMessageStatus('email', 'msg-1') as Record<string, unknown>;
+
+      expect(result.statusCode).toBe(103);
+      expect(result.statusDescription).toBeDefined();
+      expect(typeof result.statusDescription).toBe('string');
+    });
+
+    it('does not add statusDescription when statusCode is absent', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ eventCategoryType: 'TransactionalSendEvents.EmailSent' });
+
+      const result = await svc.getMessageStatus('email', 'msg-1') as Record<string, unknown>;
+
+      expect(result.statusDescription).toBeUndefined();
+    });
+  });
+
+  // ─── listAllDefinitions deduplication ───────────────────────────────────────
+
+  describe('listDefinitions (fetchAll deduplication)', () => {
+    it('deduplicates definitions by definitionKey when fetchAll=true', async () => {
+      const defs = [
+        { definitionKey: 'key-a', name: 'A' },
+        { definitionKey: 'key-b', name: 'B' },
+        { definitionKey: 'key-a', name: 'A duplicate' },
+      ];
+      (http.get as jest.Mock).mockResolvedValue({ definitions: defs, count: 3 });
+
+      const result = await svc.listDefinitions('email', { fetchAll: true });
+
+      expect(result.definitions).toHaveLength(2);
+      expect(result.definitions.map(d => d['definitionKey'])).toEqual(['key-a', 'key-b']);
+    });
+  });
+
+  // ─── sendEmailAndCheck ──────────────────────────────────────────────────────
+
+  describe('sendEmailAndCheck', () => {
+    it('sends email and returns status after polling', async () => {
+      (http.post as jest.Mock).mockResolvedValue({ requestId: 'req-1', errorcode: 0 });
+      (http.get as jest.Mock).mockResolvedValue({ eventCategoryType: 'TransactionalSendEvents.EmailSent' });
+
+      const result = await svc.sendEmailAndCheck('msg-1', 'def-1', { contactKey: 'CK', to: 'x@y.com' }, { maxAttempts: 1, intervalMs: 0 });
+
+      expect(result.messageKey).toBe('msg-1');
+      expect(result.send).toBeDefined();
+      expect(result.status).toBeDefined();
+    });
   });
 });
