@@ -1,6 +1,6 @@
 {
   "name": "ljit-mcp-sfmc",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MCP server for Salesforce Marketing Cloud",
   "main": "dist/src/main.js",
   "bin": {
