@@ -6,6 +6,6 @@ import { SfmcModule } from '../sfmc/sfmc.module';
 @Module({
   imports: [SfmcModule],
   providers: [CbService, CbToolsService],
-  exports: [CbToolsService],
+  exports: [CbService, CbToolsService],
 })
 export class ContentBuilderModule {}

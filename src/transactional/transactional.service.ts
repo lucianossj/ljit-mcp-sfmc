@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SfmcHttpService } from '../sfmc/sfmc-http.service';
+import { CbService } from '../content-builder/cb.service';
+import { parseAssetAttributes, ParsedAssetAttributes } from './ampscript-parser';
 
 export type Channel = 'email' | 'sms' | 'push';
 
@@ -65,7 +67,10 @@ export interface PushDefinitionBody {
 
 @Injectable()
 export class TransactionalService {
-  constructor(private readonly http: SfmcHttpService) {}
+  constructor(
+    private readonly http: SfmcHttpService,
+    private readonly cb: CbService,
+  ) {}
 
   // ─── Definition CRUD ────────────────────────────────────────────────────────
 
@@ -260,5 +265,33 @@ export class TransactionalService {
 
   async getMessageStatus(channel: Channel, messageKey: string): Promise<unknown> {
     return this.http.get(`/messaging/v1/${channel}/messages/${encodeURIComponent(messageKey)}`);
+  }
+
+  // ─── Inspect ─────────────────────────────────────────────────────────────────
+
+  async inspectEmailDefinition(definitionKey: string): Promise<{
+    definition: Record<string, unknown>;
+    asset: Record<string, unknown> | null;
+    attributeSchema: ParsedAssetAttributes;
+  }> {
+    const definition = await this.getDefinition('email', definitionKey) as Record<string, unknown>;
+
+    const content = definition['content'] as Record<string, unknown> | undefined;
+    const customerKey = content?.['customerKey'] as string | undefined;
+
+    let asset: Record<string, unknown> | null = null;
+    let attributeSchema: ParsedAssetAttributes = { simpleAttributes: [], jsonSchemas: [] };
+
+    if (customerKey) {
+      asset = await this.cb.getAssetByCustomerKey(customerKey);
+      if (asset) {
+        const views = asset['views'] as Record<string, unknown> | undefined;
+        const html = views?.['html'] as Record<string, unknown> | undefined;
+        const htmlContent = (html?.['content'] as string | undefined) ?? '';
+        attributeSchema = parseAssetAttributes(htmlContent);
+      }
+    }
+
+    return { definition, asset, attributeSchema };
   }
 }

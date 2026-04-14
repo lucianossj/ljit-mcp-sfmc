@@ -178,7 +178,17 @@ export class TransactionalToolsService {
     // ─── Send ────────────────────────────────────────────────────────────────
 
     server.tool(
-      'txn_send_email',
+      'txn_inspect_email_definition',
+      'Inspeciona uma definição de e-mail transacional: busca a definition, o asset vinculado no Content Builder e extrai o schema de atributos necessários (via análise do AMPscript). Use esta tool para entender quais atributos/payload o asset exige antes de enviar um e-mail de teste.',
+      {
+        definitionKey: z.string().describe('Chave da definição de e-mail a inspecionar'),
+      },
+      toolCall(({ definitionKey }) =>
+        this.svc.inspectEmailDefinition(definitionKey),
+      ),
+    );
+
+    server.tool(
       'Envia um e-mail transacional para um único destinatário usando uma definição.',
       {
         messageKey: z.string().describe('Chave única para esta mensagem (para idempotência e rastreamento)'),

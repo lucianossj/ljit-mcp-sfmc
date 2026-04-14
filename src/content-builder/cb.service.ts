@@ -42,6 +42,14 @@ export class CbService {
     return this.http.get(`/asset/v1/content/assets/${id}`);
   }
 
+  async getAssetByCustomerKey(customerKey: string): Promise<Record<string, unknown> | null> {
+    const result = await this.http.get<AssetListResponse>('/asset/v1/content/assets', {
+      $filter: `customerKey eq '${customerKey}'`,
+      $pageSize: 1,
+    });
+    return (result.items?.[0] ?? null) as Record<string, unknown> | null;
+  }
+
   async createAsset(body: AssetCreateBody): Promise<unknown> {
     return this.http.post('/asset/v1/content/assets', body);
   }

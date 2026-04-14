@@ -4,7 +4,14 @@ type McpContent = { type: 'text'; text: string };
 type McpToolResult = { content: McpContent[]; isError?: boolean };
 
 function isMcpResult(v: unknown): v is McpToolResult {
-  return typeof v === 'object' && v !== null && 'content' in v;
+  if (typeof v !== 'object' || v === null || !('content' in v)) return false;
+  const content = (v as McpToolResult).content;
+  return (
+    Array.isArray(content) &&
+    content.length > 0 &&
+    typeof (content[0] as McpContent).type === 'string' &&
+    typeof (content[0] as McpContent).text === 'string'
+  );
 }
 
 /**
