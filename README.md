@@ -74,6 +74,7 @@ SFMC_CLIENT_ID=seu_client_id
 SFMC_CLIENT_SECRET=seu_client_secret
 SFMC_SUBDOMAIN=seu_subdomain          # ex: mcXXXXXXX (sem .auth.marketingcloudapis.com)
 SFMC_ACCOUNT_ID=123456789             # opcional — necessário para acesso a child BUs
+SFMC_REQUEST_TIMEOUT_MS=30000         # opcional — timeout de cada requisição HTTP em ms (padrão: 30000)
 ```
 
 > O `SFMC_SUBDOMAIN` é o prefixo da URL de autenticação da sua BU. Você encontra nas configurações da installed package, no campo **Authentication Base URI**: `https://<subdomain>.auth.marketingcloudapis.com`.

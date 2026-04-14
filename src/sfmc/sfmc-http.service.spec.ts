@@ -74,12 +74,32 @@ describe('SfmcHttpService', () => {
     await expect(svc.get('/bad')).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it('throws SfmcApiError on 5xx response', async () => {
+  it('throws SfmcApiError on 5xx response after retries', async () => {
+    jest.useFakeTimers();
     mock.onPost(`${BASE_URL}/error`).reply(500, { message: 'server error' });
 
-    await expect(svc.post('/error', {})).rejects.toThrow(SfmcApiError);
-    await expect(svc.post('/error', {})).rejects.toMatchObject({ statusCode: 500 });
-  });
+    // Catch immediately to prevent unhandled rejection warning
+    const p1 = svc.post<unknown>('/error', {}).catch((e: unknown) => e);
+    await jest.runAllTimersAsync();
+    const err = await p1;
+    expect(err).toBeInstanceOf(SfmcApiError);
+    expect((err as SfmcApiError).statusCode).toBe(500);
+
+    jest.useRealTimers();
+  }, 15_000);
+
+  it('retries on 5xx and succeeds on recovery', async () => {
+    jest.useFakeTimers();
+    // Two separate replyOnce calls to queue sequential responses
+    mock.onPost(`${BASE_URL}/flaky`).replyOnce(500, {});
+    mock.onPost(`${BASE_URL}/flaky`).replyOnce(200, { ok: true });
+
+    const p = svc.post('/flaky', {});
+    await jest.runAllTimersAsync();
+    await expect(p).resolves.toEqual({ ok: true });
+
+    jest.useRealTimers();
+  }, 15_000);
 
   it('rethrows non-HTTP errors (e.g. network failure)', async () => {
     mock.onGet(`${BASE_URL}/network`).networkError();

@@ -104,18 +104,49 @@ export class TransactionalService {
   ): Promise<DefinitionListResponse> {
     const allDefinitions: Array<Record<string, unknown>> = [];
     let page = 1;
-    const MAX_PAGES = 200;
+    const MAX_PAGES = 100;
 
-    while (page <= MAX_PAGES) {
+    // Fetch first page to discover total count
+    const firstParams: Record<string, unknown> = { page: 1, pageSize: options.pageSize };
+    if (options.status) firstParams.status = options.status;
+
+    const firstResult = await this.http.get<DefinitionListResponse>(
+      `/messaging/v1/${channel}/definitions`,
+      firstParams,
+    );
+
+    if (firstResult.definitions.length === 0) {
+      return { definitions: [], count: 0, page: 1, pageSize: options.pageSize };
+    }
+
+    allDefinitions.push(...firstResult.definitions);
+
+    // Use count from API response to calculate total pages when available
+    const totalCount = firstResult.count ?? 0;
+    const totalPages = totalCount > 0
+      ? Math.ceil(totalCount / options.pageSize)
+      : MAX_PAGES;
+
+    page = 2;
+    while (page <= Math.min(totalPages, MAX_PAGES)) {
       const params: Record<string, unknown> = { page, pageSize: options.pageSize };
       if (options.status) params.status = options.status;
 
-      const result = await this.http.get<DefinitionListResponse>(`/messaging/v1/${channel}/definitions`, params);
+      const result = await this.http.get<DefinitionListResponse>(
+        `/messaging/v1/${channel}/definitions`,
+        params,
+      );
 
       if (result.definitions.length === 0) break;
       allDefinitions.push(...result.definitions);
       if (result.definitions.length < options.pageSize) break;
       page++;
+    }
+
+    if (page > MAX_PAGES) {
+      process.stderr.write(
+        `[sfmc] fetchAll reached MAX_PAGES (${MAX_PAGES}) for ${channel} definitions — results may be incomplete\n`,
+      );
     }
 
     const definitions = options.nameFilter

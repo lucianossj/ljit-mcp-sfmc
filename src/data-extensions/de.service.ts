@@ -58,9 +58,10 @@ export class DeService {
         'nameFilter é obrigatório para listar Data Extensions. Informe um trecho do nome para busca.',
       );
     }
+    const DE_MAX_PAGE_SIZE = 500;
     const params: Record<string, unknown> = {
       $page: options.page ?? 1,
-      $pageSize: options.pageSize ?? 50,
+      $pageSize: Math.min(options.pageSize ?? 50, DE_MAX_PAGE_SIZE),
       $search: options.nameFilter,
     };
 
