@@ -608,19 +608,26 @@ export class TransactionalService {
       }
     }
 
-    // 4. Fetch DE fields with metadata
+    // 4. Fetch DE fields with metadata — multi-strategy fallback
     let deFields: string[] = [];
     let requiredDeFields: string[] = [];
     if (dataExtension) {
-      try {
-        const deFieldsMeta = await this.de.getDeFieldsWithMetadata(dataExtension);
-        deFields = deFieldsMeta.map((f) => f.name);
-        requiredDeFields = deFieldsMeta
+      const resolved = await this.de.resolveDeFieldsWithFallback(dataExtension);
+      if (resolved.fields.length > 0) {
+        deFields = resolved.fields.map((f) => f.name);
+        requiredDeFields = resolved.fields
           .filter((f) => f.isRequired && !f.isPrimaryKey && !f.defaultValue)
           .map((f) => f.name);
-      } catch {
+        if (resolved.resolvedVia && resolved.resolvedVia !== 'schema') {
+          warnings.push(
+            `Schema da DE "${dataExtension}" inferido via ${resolved.resolvedVia}. ` +
+            `Metadados de isRequired podem não estar disponíveis.`,
+          );
+        }
+      } else {
         warnings.push(
-          `Não foi possível buscar o schema da DE "${dataExtension}". Validação de atributos ignorada.`,
+          `Não foi possível resolver o schema da DE "${dataExtension}" por nenhuma estratégia. ` +
+          `Normalização de atributos ignorada — verifique se o externalKey está correto.`,
         );
       }
     }
@@ -804,7 +811,9 @@ export class TransactionalService {
    * 2. Se preflight falhar → retorna lista de campos necessários, NÃO envia
    * 3. Se passar → envia com atributos normalizados
    * 4. Polling de status até confirmação final (até ~10s)
-   * 5. Retorna success=true APENAS se eventCategoryType confirmar entrega (EmailSent)
+   * 5. Se SFMC retornar código 19 (MissingRequiredFields) → auto-recovery:
+   *    infere campos via row-sample, renormaliza e reenvia automaticamente
+   * 6. Retorna success=true APENAS se eventCategoryType confirmar entrega (EmailSent)
    */
   async sendTestEmail(
     messageKey: string,
@@ -819,6 +828,7 @@ export class TransactionalService {
     send?: unknown;
     status?: unknown;
     summary: string;
+    retriedAfterError19?: boolean;
   }> {
     const { maxAttempts = 5, intervalMs = 2000 } = options;
 
@@ -860,6 +870,91 @@ export class TransactionalService {
     }
 
     // 3. Poll for delivery confirmation
+    const status = await this.pollMessageStatus(messageKey, maxAttempts, intervalMs);
+
+    // 4. Auto-recovery para erro 19 (MissingRequiredFields)
+    const statusRec = status as Record<string, unknown> | null;
+    if (statusRec?.['statusCode'] === 19) {
+      const recovered = await this.recoverFromError19(
+        messageKey,
+        definitionKey,
+        recipient,
+        preflight,
+        maxAttempts,
+        intervalMs,
+      );
+      if (recovered) return recovered;
+    }
+
+    return this.classifyTestEmailOutcome(messageKey, preflight, send, status, recipient.to);
+  }
+
+  /**
+   * Tenta recuperar automaticamente de um erro 19 (MissingRequiredFields):
+   * 1. Busca 1 row da DE para inferir os nomes reais dos campos
+   * 2. Renormaliza os atributos contra esses nomes
+   * 3. Reenvia com um novo messageKey
+   * Retorna null se não for possível recuperar.
+   */
+  private async recoverFromError19(
+    originalMessageKey: string,
+    definitionKey: string,
+    recipient: { contactKey: string; to: string; attributes?: Record<string, unknown> },
+    preflight: PreflightSummary,
+    maxAttempts: number,
+    intervalMs: number,
+  ): Promise<{
+    success: boolean;
+    outcome: 'sent' | 'failed' | 'unknown';
+    messageKey: string;
+    preflight: PreflightSummary;
+    send?: unknown;
+    status?: unknown;
+    summary: string;
+    retriedAfterError19: true;
+  } | null> {
+    const dataExtension = preflight.definition.dataExtension;
+    if (!dataExtension) return null;
+
+    // Inferir campos via row-sample
+    let rowFields: string[] = [];
+    try {
+      const rows = await this.de.listRows(dataExtension, { pageSize: 1 });
+      const firstItem = rows.items?.[0];
+      if (firstItem) {
+        const values = (firstItem['values'] ?? firstItem) as Record<string, unknown>;
+        rowFields = Object.keys(values);
+      }
+    } catch { /* não foi possível recuperar */ }
+
+    if (rowFields.length === 0) return null;
+
+    // Renormalizar atributos contra os campos inferidos
+    const rowFieldsLower = new Map(rowFields.map((f) => [f.toLowerCase(), f]));
+    const reNormalized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(preflight.normalizedAttributes)) {
+      const match = rowFieldsLower.get(key.toLowerCase()) ?? key;
+      reNormalized[match] = value;
+    }
+
+    const retryMessageKey = `${originalMessageKey}-r19`;
+    let retrySend: unknown;
+    try {
+      retrySend = await this.sendEmail(retryMessageKey, definitionKey, { ...recipient, attributes: reNormalized });
+    } catch {
+      return null;
+    }
+
+    const retryStatus = await this.pollMessageStatus(retryMessageKey, maxAttempts, intervalMs);
+    const result = this.classifyTestEmailOutcome(retryMessageKey, preflight, retrySend, retryStatus, recipient.to);
+    return { ...result, retriedAfterError19: true };
+  }
+
+  private async pollMessageStatus(
+    messageKey: string,
+    maxAttempts: number,
+    intervalMs: number,
+  ): Promise<unknown> {
     let status: unknown = null;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
@@ -882,33 +977,61 @@ export class TransactionalService {
         // Not yet available — retry
       }
     }
+    return status;
+  }
 
-    // 4. Classify outcome
+  private classifyTestEmailOutcome(
+    messageKey: string,
+    preflight: PreflightSummary,
+    send: unknown,
+    status: unknown,
+    recipientTo: string,
+  ): {
+    success: boolean;
+    outcome: 'sent' | 'failed' | 'unknown';
+    messageKey: string;
+    preflight: PreflightSummary;
+    send?: unknown;
+    status?: unknown;
+    summary: string;
+  } {
     const statusRec = status as Record<string, unknown> | null;
     const event = String(statusRec?.['eventCategoryType'] ?? '');
     const statusCode = statusRec?.['statusCode'];
 
-    let outcome: 'sent' | 'failed' | 'unknown';
-    let success: boolean;
-    let summary: string;
-
     if (event.toLowerCase().includes('notsent') || event.toLowerCase().includes('error') || event.toLowerCase().includes('bounce')) {
-      outcome = 'failed';
-      success = false;
       const msg = String(statusRec?.['statusMessage'] ?? event);
-      summary = `E-mail enviado para a fila, mas SFMC reportou falha: ${msg} (código ${statusCode ?? 'N/A'}).`;
+      return {
+        success: false,
+        outcome: 'failed',
+        messageKey,
+        preflight,
+        send,
+        status,
+        summary: `E-mail enviado para a fila, mas SFMC reportou falha: ${msg} (código ${statusCode ?? 'N/A'}).`,
+      };
     } else if (event.toLowerCase().includes('sent')) {
-      outcome = 'sent';
-      success = true;
-      summary = `E-mail enviado e confirmado com sucesso para ${recipient.to}.`;
-    } else {
-      outcome = 'unknown';
-      success = false;
-      summary = status
-        ? `E-mail enviado mas status final incerto após polling. Último status: ${event || JSON.stringify(status)}`
-        : `E-mail enviado mas status não disponível após polling de ${maxAttempts * intervalMs / 1000}s. Verifique manualmente.`;
+      return {
+        success: true,
+        outcome: 'sent',
+        messageKey,
+        preflight,
+        send,
+        status,
+        summary: `E-mail enviado e confirmado com sucesso para ${recipientTo}.`,
+      };
     }
 
-    return { success, outcome, messageKey, preflight, send, status, summary };
+    return {
+      success: false,
+      outcome: 'unknown',
+      messageKey,
+      preflight,
+      send,
+      status,
+      summary: status
+        ? `E-mail enviado mas status final incerto após polling. Último status: ${event || JSON.stringify(status)}`
+        : `E-mail enviado mas status não disponível após polling. Verifique manualmente.`,
+    };
   }
 }

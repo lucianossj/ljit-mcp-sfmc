@@ -19,6 +19,8 @@ const cb = {
 const de = {
   getDeFields: jest.fn(),
   getDeFieldsWithMetadata: jest.fn(),
+  resolveDeFieldsWithFallback: jest.fn(),
+  listRows: jest.fn(),
   getDataExtension: jest.fn(),
 } as unknown as DeService;
 
@@ -353,7 +355,7 @@ describe('TransactionalService', () => {
     it('returns passed=false when definition status is Inactive', async () => {
       (http.get as jest.Mock).mockResolvedValue({ ...activeDefinition, status: 'Inactive' });
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(mockAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([{ name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' }]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [{ name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' }], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', {});
 
@@ -364,7 +366,7 @@ describe('TransactionalService', () => {
     it('returns passed=false when asset is not found in Content Builder', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(null);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', {});
 
@@ -389,10 +391,10 @@ describe('TransactionalService', () => {
       };
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(assetWithGuard);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [
         { name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' },
         { name: 'lastName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' },
-      ]);
+      ], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', {});
 
@@ -403,7 +405,7 @@ describe('TransactionalService', () => {
     it('auto-normalizes attribute case and adds warning', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(mockAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([{ name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' }]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [{ name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' }], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', { FIRSTNAME: 'John' });
 
@@ -415,7 +417,7 @@ describe('TransactionalService', () => {
     it('returns warning (not error) for missing attribute when no RaiseError guards exist', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(mockAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([{ name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' }]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [{ name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' }], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', {});
 
@@ -427,7 +429,7 @@ describe('TransactionalService', () => {
     it('passes when all required attributes are provided', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(mockAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([{ name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' }]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [{ name: 'firstName', isRequired: false, isPrimaryKey: false, fieldType: 'Text' }], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', { firstName: 'John' });
 
@@ -447,7 +449,7 @@ describe('TransactionalService', () => {
         name: 'T', status: 'Inactive', content: { customerKey: 'ck' }, subscriptions: {},
       });
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue({ id: 1, name: 'A', views: {} });
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [], resolvedVia: 'schema' });
 
       const result = await svc.sendEmailWithPreflight('msg-1', 'def-1', { contactKey: 'CK', to: 'x@y.com' });
 
@@ -461,7 +463,7 @@ describe('TransactionalService', () => {
         name: 'T', status: 'Active', content: { customerKey: 'ck' }, subscriptions: { dataExtension: 'DE' },
       });
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue({ id: 1, name: 'A', views: {} });
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([{ name: 'Email', isRequired: false, isPrimaryKey: false, fieldType: 'EmailAddress' }]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [{ name: 'Email', isRequired: false, isPrimaryKey: false, fieldType: 'EmailAddress' }], resolvedVia: 'schema' });
       (http.post as jest.Mock).mockResolvedValue({ requestId: 'r1' });
 
       const result = await svc.sendEmailWithPreflight('msg-1', 'def-1', {
@@ -506,10 +508,10 @@ describe('TransactionalService', () => {
     it('returns passed=false when a required DE field (no defaultValue) is absent', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [
         { name: 'OrderId', isRequired: true, isPrimaryKey: true, fieldType: 'Text' },
         { name: 'NomeCliente', isRequired: true, isPrimaryKey: false, fieldType: 'Text' },
-      ]);
+      ], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', {});
 
@@ -520,9 +522,9 @@ describe('TransactionalService', () => {
     it('does not block on required field that has a defaultValue', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [
         { name: 'Status', isRequired: true, isPrimaryKey: false, fieldType: 'Text', defaultValue: 'Pendente' },
-      ]);
+      ], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', {});
 
@@ -533,9 +535,9 @@ describe('TransactionalService', () => {
     it('does not block on required primary key field', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [
         { name: 'SubscriberKey', isRequired: true, isPrimaryKey: true, fieldType: 'Text' },
-      ]);
+      ], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', {});
 
@@ -545,9 +547,9 @@ describe('TransactionalService', () => {
     it('passes when required DE field is provided in attributes', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [
         { name: 'NomeCliente', isRequired: true, isPrimaryKey: false, fieldType: 'Text' },
-      ]);
+      ], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', { NomeCliente: 'João Silva' });
 
@@ -558,10 +560,10 @@ describe('TransactionalService', () => {
     it('exposes requiredDeFields in the summary', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [
         { name: 'OrderNum', isRequired: true, isPrimaryKey: false, fieldType: 'Number' },
         { name: 'OptField', isRequired: false, isPrimaryKey: false, fieldType: 'Text' },
-      ]);
+      ], resolvedVia: 'schema' });
 
       const result = await svc.preflightEmailSend('def-key', { OrderNum: '123' });
 
@@ -584,9 +586,9 @@ describe('TransactionalService', () => {
     it('returns outcome=preflight_blocked when required DE field is missing', async () => {
       (http.get as jest.Mock).mockResolvedValue(activeDefinition);
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [
         { name: 'NomeCliente', isRequired: true, isPrimaryKey: false, fieldType: 'Text' },
-      ]);
+      ], resolvedVia: 'schema' });
 
       const result = await svc.sendTestEmail('msg-test', 'def-1', { contactKey: 'CK', to: 'x@y.com' });
 
@@ -601,7 +603,7 @@ describe('TransactionalService', () => {
         .mockResolvedValueOnce(activeDefinition) // getDefinition in preflight
         .mockResolvedValueOnce({ eventCategoryType: 'TransactionalSendEvents.EmailSent' }); // getMessageStatus
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [], resolvedVia: 'schema' });
       (http.post as jest.Mock).mockResolvedValue({ requestId: 'r1', errorcode: 0 });
 
       const result = await svc.sendTestEmail(
@@ -624,7 +626,7 @@ describe('TransactionalService', () => {
           statusMessage: 'MissingRequiredFields',
         });
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [], resolvedVia: 'schema' });
       (http.post as jest.Mock).mockResolvedValue({ requestId: 'r1', errorcode: 0 });
 
       const result = await svc.sendTestEmail(
@@ -643,7 +645,7 @@ describe('TransactionalService', () => {
         .mockResolvedValueOnce(activeDefinition)
         .mockRejectedValue(new Error('not found'));
       (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(simpleAsset);
-      (de.getDeFieldsWithMetadata as jest.Mock).mockResolvedValue([]);
+      (de.resolveDeFieldsWithFallback as jest.Mock).mockResolvedValue({ fields: [], resolvedVia: 'schema' });
       (http.post as jest.Mock).mockResolvedValue({ requestId: 'r1', errorcode: 0 });
 
       const result = await svc.sendTestEmail(

@@ -181,4 +181,91 @@ export class DeService {
     const fields = await this.getDeFieldsWithMetadata(externalKey);
     return fields.map((f) => f.name);
   }
+
+  /**
+   * Resolve os campos de uma DE tentando múltiplas estratégias em cascata.
+   * Usa a primeira que retornar dados. Nunca lança exceção — retorna array vazio se tudo falhar.
+   *
+   * Estratégias (em ordem):
+   * 1. Schema formal via getDeFieldsWithMetadata(externalKey)
+   * 2. Amostra de 1 row via listRows — infere campos pelos values do primeiro item
+   * 3. Busca por nome via listDataExtensions — o externalKey pode ser o nome da DE
+   * 4. Variações do nome: DEX_<key>, <key com - trocado por _>, sem prefixo DEX_/DE_
+   */
+  async resolveDeFieldsWithFallback(externalKey: string): Promise<{
+    fields: Array<{ name: string; isRequired: boolean; isPrimaryKey: boolean; fieldType: string; defaultValue?: string }>;
+    resolvedVia: string | null;
+  }> {
+    // Estratégia 1: schema formal pelo externalKey
+    try {
+      const fields = await this.getDeFieldsWithMetadata(externalKey);
+      if (fields.length > 0) return { fields, resolvedVia: 'schema' };
+    } catch { /* fallthrough */ }
+
+    // Estratégia 2: inferir campos pelo values do primeiro row
+    try {
+      const rows = await this.listRows(externalKey, { pageSize: 1 });
+      const firstItem = rows.items?.[0];
+      if (firstItem) {
+        const values = (firstItem['values'] ?? firstItem) as Record<string, unknown>;
+        const fields = Object.keys(values).map((name) => ({
+          name,
+          isRequired: false,
+          isPrimaryKey: false,
+          fieldType: 'Text' as const,
+        }));
+        if (fields.length > 0) return { fields, resolvedVia: 'row-sample' };
+      }
+    } catch { /* fallthrough */ }
+
+    // Estratégias 3 e 4: busca por variações do nome/key
+    const candidates = this.buildKeyVariations(externalKey);
+    for (const candidate of candidates) {
+      // Tenta schema formal com a variação
+      try {
+        const fields = await this.getDeFieldsWithMetadata(candidate);
+        if (fields.length > 0) return { fields, resolvedVia: `schema:${candidate}` };
+      } catch { /* fallthrough */ }
+
+      // Tenta listRows com a variação
+      try {
+        const rows = await this.listRows(candidate, { pageSize: 1 });
+        const firstItem = rows.items?.[0];
+        if (firstItem) {
+          const values = (firstItem['values'] ?? firstItem) as Record<string, unknown>;
+          const fields = Object.keys(values).map((name) => ({
+            name,
+            isRequired: false,
+            isPrimaryKey: false,
+            fieldType: 'Text' as const,
+          }));
+          if (fields.length > 0) return { fields, resolvedVia: `row-sample:${candidate}` };
+        }
+      } catch { /* fallthrough */ }
+    }
+
+    return { fields: [], resolvedVia: null };
+  }
+
+  private buildKeyVariations(externalKey: string): string[] {
+    const variations = new Set<string>();
+    const normalized = externalKey.replace(/-/g, '_');
+
+    // Troca hífens por underscores
+    if (normalized !== externalKey) variations.add(normalized);
+
+    // Adiciona prefixo DEX_
+    variations.add(`DEX_${externalKey}`);
+    variations.add(`DEX_${normalized}`);
+
+    // Remove prefixos comuns
+    for (const prefix of ['DEX_', 'DE_', 'DEX-', 'DE-']) {
+      if (externalKey.toUpperCase().startsWith(prefix)) {
+        variations.add(externalKey.slice(prefix.length));
+        variations.add(externalKey.slice(prefix.length).replace(/-/g, '_'));
+      }
+    }
+
+    return [...variations].filter((v) => v !== externalKey);
+  }
 }
