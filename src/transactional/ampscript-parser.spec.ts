@@ -5,6 +5,9 @@ import {
   extractContentBlockIds,
   extractContentBlockNames,
   parseAssetAttributes,
+  generateMockValue,
+  inferFieldType,
+  generateMockPayload,
 } from './ampscript-parser';
 
 describe('extractSimpleAttributes', () => {
@@ -177,3 +180,135 @@ describe('parseAssetAttributes', () => {
     expect(result.contentBlockIds).toContain(999);
   });
 });
+
+// ─── generateMockValue ────────────────────────────────────────────────────────
+
+
+// ─── generateMockValue ────────────────────────────────────────────────────────
+
+describe('generateMockValue', () => {
+  it('retorna "TST" para o campo environment', () => {
+    expect(generateMockValue('environment')).toBe('TST');
+  });
+
+  it('retorna e-mail sintético para campos com "email"', () => {
+    expect(generateMockValue('EmailAddress')).toBe('test@example.com');
+  });
+
+  it('retorna contact key sintético para subscriberkey', () => {
+    expect(generateMockValue('subscriberkey')).toBe('mock-contact-key');
+  });
+
+  it('retorna data ISO para campos com "date"', () => {
+    const val = generateMockValue('eventdate');
+    expect(val).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('retorna 0 para tipo number', () => {
+    expect(generateMockValue('someField', 'number')).toBe(0);
+  });
+
+  it('retorna false para tipo boolean', () => {
+    expect(generateMockValue('someField', 'boolean')).toBe(false);
+  });
+
+  it('retorna string para tipo string desconhecido', () => {
+    expect(typeof generateMockValue('someField', 'string')).toBe('string');
+  });
+});
+
+// ─── inferFieldType ───────────────────────────────────────────────────────────
+
+describe('inferFieldType', () => {
+  it('infere boolean para true/false', () => {
+    expect(inferFieldType(true)).toBe('boolean');
+    expect(inferFieldType(false)).toBe('boolean');
+  });
+
+  it('infere number para valores numéricos', () => {
+    expect(inferFieldType(42)).toBe('number');
+    expect(inferFieldType(3.14)).toBe('number');
+  });
+
+  it('infere date para string no formato ISO', () => {
+    expect(inferFieldType('2026-04-15')).toBe('date');
+    expect(inferFieldType('2026-04-15T10:00:00Z')).toBe('date');
+  });
+
+  it('infere number para string numérica', () => {
+    expect(inferFieldType('150')).toBe('number');
+  });
+
+  it('infere string para texto genérico', () => {
+    expect(inferFieldType('hello')).toBe('string');
+    expect(inferFieldType('')).toBe('string');
+  });
+});
+
+// ─── generateMockPayload ─────────────────────────────────────────────────────
+
+describe('generateMockPayload', () => {
+  it('gera campos simples com valores sintéticos', () => {
+    const payload = generateMockPayload(
+      ['EmailAddress', 'environment', 'SubscriberKey'],
+      [],
+    );
+    expect(payload['EmailAddress']).toBe('test@example.com');
+    expect(payload['environment']).toBe('TST');
+    expect(payload['SubscriberKey']).toBe('mock-contact-key');
+  });
+
+  it('gera campo JSON serializado como string', () => {
+    const schema = {
+      variableName: 'json',
+      paths: {
+        '$.client': ['name', 'document'],
+        '$.payments[*]': ['value', 'paymentDescription'],
+      },
+    };
+    const payload = generateMockPayload([], [schema]);
+    expect(typeof payload['json']).toBe('string');
+
+    const parsed = JSON.parse(payload['json'] as string);
+    expect(parsed).toHaveProperty('client');
+    expect(parsed.client).toHaveProperty('name');
+    expect(parsed.client).toHaveProperty('document');
+    expect(parsed).toHaveProperty('payments');
+    expect(Array.isArray(parsed.payments)).toBe(true);
+    expect(parsed.payments[0]).toHaveProperty('paymentDescription');
+  });
+
+  it('campos de preço dentro do JSON são numéricos (0.00)', () => {
+    const schema = {
+      variableName: 'json',
+      paths: { '$.cart': ['totalPrice', 'deliveryPrice', 'name'] },
+    };
+    const payload = generateMockPayload([], [schema]);
+    const parsed = JSON.parse(payload['json'] as string);
+    expect(typeof parsed.cart.totalPrice).toBe('number');
+    expect(typeof parsed.cart.deliveryPrice).toBe('number');
+    expect(typeof parsed.cart.name).toBe('string');
+  });
+
+  it('campos de URL dentro do JSON são strings com https://', () => {
+    const schema = {
+      variableName: 'json',
+      paths: { '$.invoice': ['linkSefaz', 'urlQrCode'] },
+    };
+    const payload = generateMockPayload([], [schema]);
+    const parsed = JSON.parse(payload['json'] as string);
+    expect(parsed.invoice.linkSefaz).toBe('https://example.com');
+    expect(parsed.invoice.urlQrCode).toBe('https://example.com');
+  });
+
+  it('usa tipo inferido pelo row-sample para campos simples', () => {
+    const deFieldTypes = new Map([['order_id', 'number' as const]]);
+    const payload = generateMockPayload(['order_id'], [], deFieldTypes);
+    expect(typeof payload['order_id']).toBe('number');
+  });
+
+  it('retorna payload vazio para inputs vazios', () => {
+    expect(generateMockPayload([], [])).toEqual({});
+  });
+});
+

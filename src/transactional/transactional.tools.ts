@@ -221,15 +221,26 @@ export class TransactionalToolsService {
       'guards RaiseError() que bloqueiam o envio, e normalização de nomes de atributos contra o schema da DE. ' +
       'Retorna passed=true/false, errors[] (bloqueantes), warnings[] (não-bloqueantes), ' +
       'normalizedAttributes (atributos com nomes corrigidos prontos para uso) e requiredAttributes. ' +
-      'Use antes de txn_send_email para garantir que o payload está correto.',
+      'Use antes de txn_send_email para garantir que o payload está correto. ' +
+      'Quando generateMock=true, gera automaticamente um payload de teste sintético em mockPayload — ' +
+      'usa row-sample da DE apenas para inferir tipos de campo, sem copiar valores reais.',
       {
         definitionKey: z.string().describe('Chave da definição de e-mail a inspecionar'),
         attributes: z.record(z.unknown()).optional().default({}).describe(
           'Atributos que serão usados no envio — serão validados e normalizados contra o schema da DE',
         ),
+        generateMock: z.boolean().optional().default(false).describe(
+          'Quando true, gera um payload mock sintético completo em mockPayload, ' +
+          'pronto para uso em txn_send_test_email. Usa row-sample da DE apenas para inferir tipos, ' +
+          'sem reutilizar valores reais de outros registros.',
+        ),
       },
-      toolCall(({ definitionKey, attributes }) =>
-        this.svc.preflightEmailSend(definitionKey, attributes as Record<string, unknown>),
+      toolCall(({ definitionKey, attributes, generateMock }) =>
+        this.svc.preflightEmailSend(
+          definitionKey,
+          attributes as Record<string, unknown>,
+          generateMock,
+        ),
       ),
     );
 
@@ -358,9 +369,17 @@ export class TransactionalToolsService {
         definitionKey: z.string().describe('Chave da definição de push a ser usada'),
         contactKey: z.string().describe('Chave do contato destinatário'),
         attributes: z.record(z.unknown()).optional().describe('Atributos de personalização'),
+        content: z
+          .object({
+            title: z.string().optional().describe('Título da notificação push'),
+            message: z.string().optional().describe('Corpo da mensagem'),
+            url: z.string().optional().describe('URL de deep link ou web'),
+          })
+          .optional()
+          .describe('Conteúdo inline a sobrescrever o definido na definition'),
       },
-      toolCall(({ messageKey, definitionKey, contactKey, attributes }) =>
-        this.svc.sendPush(messageKey, definitionKey, { contactKey, attributes }),
+      toolCall(({ messageKey, definitionKey, contactKey, attributes, content }) =>
+        this.svc.sendPush(messageKey, definitionKey, { contactKey, attributes }, content),
       ),
     );
 

@@ -215,6 +215,160 @@ export function extractContentBlockNames(content: string): string[] {
   return Array.from(names);
 }
 
+/** Tipos de campo inferidos via row-sample da DE. */
+export type DeFieldType = 'string' | 'number' | 'date' | 'boolean';
+
+/**
+ * Gera um valor mock sintético para um campo simples.
+ * Usa heurísticas de nome de campo para produzir valores realistas, mas 100% fictícios.
+ * Nunca utiliza dados reais de registros da DE.
+ */
+export function generateMockValue(
+  fieldName: string,
+  inferredType: DeFieldType = 'string',
+): string | number | boolean {
+  // Tipos explícitos (inferidos via row-sample) têm prioridade máxima
+  if (inferredType === 'number') return 0;
+  if (inferredType === 'boolean') return false;
+  if (inferredType === 'date') return new Date().toISOString().split('T')[0];
+
+  const lower = fieldName.toLowerCase();
+
+  if (lower === 'environment') return 'TST';
+  if (lower.includes('email')) return 'test@example.com';
+  if (lower.includes('subscriberkey') || lower.includes('contactkey')) return 'mock-contact-key';
+  if (lower.includes('emailname') || lower.includes('campaignname')) return 'MOCK_CAMPAIGN';
+  if (lower.includes('order') || lower.includes('pedido') || lower === 'order_id') return 'TEST-99999';
+  if (lower.includes('date') || lower.includes('data')) return new Date().toISOString().split('T')[0];
+
+  return 'mock-value';
+}
+
+/**
+ * Determina o tipo de um campo com base no valor de um row-sample.
+ * Usado apenas para inferir o tipo — o valor em si nunca é reutilizado.
+ */
+export function inferFieldType(sampleValue: unknown): DeFieldType {
+  if (typeof sampleValue === 'boolean') return 'boolean';
+  if (typeof sampleValue === 'number') return 'number';
+  if (typeof sampleValue === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}/.test(sampleValue)) return 'date';
+    if (!isNaN(Number(sampleValue)) && sampleValue.trim() !== '') return 'number';
+  }
+  return 'string';
+}
+
+/**
+ * Define um valor num objeto profundo seguindo um path JSON (ex: "$.client.name").
+ * Paths com `[*]` criam arrays com 1 item mock.
+ */
+function setNestedPath(
+  root: Record<string, unknown>,
+  path: string,
+  fields: string[],
+): void {
+  // Remove leading "$."
+  const trimmed = path.replace(/^\$\.?/, '');
+  if (!trimmed) return;
+
+  const segments = trimmed.split('.');
+  let current: Record<string, unknown> = root;
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const isArray = seg.endsWith('[*]');
+    const key = isArray ? seg.slice(0, -3) : seg;
+    const isLast = i === segments.length - 1;
+
+    if (isLast) {
+      if (isArray) {
+        const item: Record<string, unknown> = {};
+        for (const field of fields) {
+          item[field] = generateMockValueForJsonField(field);
+        }
+        current[key] = [item];
+      } else {
+        const obj: Record<string, unknown> = {};
+        for (const field of fields) {
+          obj[field] = generateMockValueForJsonField(field);
+        }
+        current[key] = obj;
+      }
+    } else {
+      if (isArray) {
+        if (!Array.isArray(current[key])) {
+          current[key] = [{}];
+        }
+        current = (current[key] as Record<string, unknown>[])[0];
+      } else {
+        if (typeof current[key] !== 'object' || current[key] === null || Array.isArray(current[key])) {
+          current[key] = {};
+        }
+        current = current[key] as Record<string, unknown>;
+      }
+    }
+  }
+}
+
+/** Gera um valor mock adequado para um campo dentro de um JSON complexo. */
+function generateMockValueForJsonField(field: string): string | number {
+  const lower = field.toLowerCase();
+  if (lower.includes('price') || lower.includes('value') || lower.includes('total') ||
+      lower.includes('desconto') || lower.includes('amount') || lower.includes('valor')) {
+    return 0.00;
+  }
+  if (lower.includes('url') || lower.includes('link')) return 'https://example.com';
+  if (lower.includes('date') || lower.includes('data')) return new Date().toISOString().split('T')[0];
+  if (lower.includes('email')) return 'test@example.com';
+  if (lower.includes('id') || lower.includes('key') || lower.includes('code') ||
+      lower.includes('number') || lower.includes('numero') || lower.includes('serie')) {
+    return 'TEST-001';
+  }
+  if (lower.includes('name') || lower.includes('nome') || lower.includes('description') ||
+      lower.includes('employer') || lower.includes('street') || lower.includes('city') ||
+      lower.includes('district') || lower.includes('uf') || lower.includes('complement') ||
+      lower.includes('zipcode') || lower.includes('phone') || lower.includes('cnpj') ||
+      lower.includes('document') || lower.includes('tipo') || lower.includes('type') ||
+      lower.includes('protocol') || lower.includes('beneficiary')) {
+    return 'Mock Value';
+  }
+  return 'mock';
+}
+
+/**
+ * Gera um payload mock completo a partir dos schemas detectados no AMPscript.
+ *
+ * @param simpleAttributes  Lista de campos simples (AttributeValue)
+ * @param jsonSchemas       Schemas JSON detectados (BuildRowsetFromJSON)
+ * @param deFieldTypes      Mapa de nome de campo (lowercase) → tipo inferido via row-sample
+ * @returns Objeto com os atributos mock prontos para envio. Campos JSON são serializados como string.
+ */
+export function generateMockPayload(
+  simpleAttributes: string[],
+  jsonSchemas: JsonSchema[],
+  deFieldTypes: Map<string, DeFieldType> = new Map(),
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+
+  // Campos simples
+  for (const attr of simpleAttributes) {
+    const inferredType = deFieldTypes.get(attr.toLowerCase()) ?? 'string';
+    payload[attr] = generateMockValue(attr, inferredType);
+  }
+
+  // Campos JSON complexos — serializado como string (campo Text na DE)
+  for (const schema of jsonSchemas) {
+    const root: Record<string, unknown> = {};
+    const allPaths = { ...schema.paths, ...(schema.dynamicPaths ?? {}) };
+    for (const [path, fields] of Object.entries(allPaths)) {
+      setNestedPath(root, path, fields);
+    }
+    payload[schema.variableName] = JSON.stringify(root);
+  }
+
+  return payload;
+}
+
 /**
  * Analisa o conteúdo de um asset e retorna os atributos necessários:
  * - `simpleAttributes`: atributos acessados via AttributeValue()

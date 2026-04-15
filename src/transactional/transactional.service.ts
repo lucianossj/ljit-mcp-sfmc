@@ -2,7 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { SfmcHttpService } from '../sfmc/sfmc-http.service';
 import { CbService } from '../content-builder/cb.service';
 import { DeService } from '../data-extensions/de.service';
-import { parseAssetAttributes, ParsedAssetAttributes, RaiseErrorGuard, extractContentBlockIds } from './ampscript-parser';
+import {
+  parseAssetAttributes,
+  ParsedAssetAttributes,
+  RaiseErrorGuard,
+  extractContentBlockIds,
+  generateMockPayload,
+  inferFieldType,
+  DeFieldType,
+} from './ampscript-parser';
 import { enrichWithStatusDescription } from './transactional-error-codes';
 
 export type Channel = 'email' | 'sms' | 'push';
@@ -99,6 +107,11 @@ export interface PreflightSummary {
   raisedErrorGuards: RaiseErrorGuard[];
   /** Quantidade de content blocks resolvidos recursivamente */
   contentBlocksResolved: number;
+  /**
+   * Payload mock gerado automaticamente — presente apenas quando generateMock=true.
+   * Todos os valores são fictícios; campos JSON são serializado como string.
+   */
+  mockPayload?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -522,10 +535,14 @@ export class TransactionalService {
    * Executa um pre-flight completo para um envio de e-mail transacional.
    * Valida definition, asset, content blocks, AMPscript schema e atributos vs DE.
    * Retorna um PreflightSummary com errors[] (bloqueantes) e warnings[] (não-bloqueantes).
+   *
+   * Quando `generateMock=true`, gera automaticamente um payload sintético em `mockPayload`,
+   * inferindo tipos via row-sample da DE sem reutilizar valores reais.
    */
   async preflightEmailSend(
     definitionKey: string,
     attributes: Record<string, unknown> = {},
+    generateMock = false,
   ): Promise<PreflightSummary> {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -711,6 +728,29 @@ export class TransactionalService {
       }
     }
 
+    // 9. Generate mock payload if requested
+    let mockPayload: Record<string, unknown> | undefined;
+    if (generateMock) {
+      const deFieldTypes = new Map<string, DeFieldType>();
+      if (dataExtension) {
+        try {
+          const rows = await this.de.listRows(dataExtension, { pageSize: 1 });
+          const firstItem = rows.items?.[0];
+          if (firstItem) {
+            const values = (firstItem['values'] ?? firstItem) as Record<string, unknown>;
+            for (const [key, val] of Object.entries(values)) {
+              deFieldTypes.set(key.toLowerCase(), inferFieldType(val));
+            }
+          }
+        } catch { /* não foi possível recuperar — continua com heurísticas */ }
+      }
+      mockPayload = generateMockPayload(
+        attributeSchema.simpleAttributes,
+        attributeSchema.jsonSchemas,
+        deFieldTypes,
+      );
+    }
+
     return {
       passed: errors.length === 0,
       errors,
@@ -723,6 +763,7 @@ export class TransactionalService {
       normalizedAttributes,
       raisedErrorGuards: attributeSchema.raisedErrors,
       contentBlocksResolved,
+      ...(mockPayload !== undefined && { mockPayload }),
     };
   }
 
