@@ -321,4 +321,170 @@ describe('TransactionalService', () => {
       expect(result.status).toBeDefined();
     });
   });
+
+  // ─── preflightEmailSend ─────────────────────────────────────────────────────
+
+  describe('preflightEmailSend', () => {
+    const activeDefinition = {
+      name: 'Test Email',
+      status: 'Active',
+      content: { customerKey: 'ck-123' },
+      subscriptions: { dataExtension: 'DE_TEST' },
+      fromEmail: 'from@test.com',
+    };
+
+    const mockAsset = {
+      id: 42,
+      name: 'My Template',
+      views: { html: { content: '%%[ SET @name = AttributeValue("firstName") ]%% Hello %%=v(@name)=%%' } },
+    };
+
+    it('returns passed=false when definition is not found', async () => {
+      (http.get as jest.Mock).mockRejectedValue(new Error('Not found'));
+
+      const result = await svc.preflightEmailSend('missing-def', {});
+
+      expect(result.passed).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('missing-def');
+    });
+
+    it('returns passed=false when definition status is Inactive', async () => {
+      (http.get as jest.Mock).mockResolvedValue({ ...activeDefinition, status: 'Inactive' });
+      (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(mockAsset);
+      (de.getDeFields as jest.Mock).mockResolvedValue(['firstName']);
+
+      const result = await svc.preflightEmailSend('def-key', {});
+
+      expect(result.passed).toBe(false);
+      expect(result.errors.some(e => e.includes('Inactive'))).toBe(true);
+    });
+
+    it('returns passed=false when asset is not found in Content Builder', async () => {
+      (http.get as jest.Mock).mockResolvedValue(activeDefinition);
+      (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(null);
+      (de.getDeFields as jest.Mock).mockResolvedValue([]);
+
+      const result = await svc.preflightEmailSend('def-key', {});
+
+      expect(result.passed).toBe(false);
+      expect(result.errors.some(e => e.includes('ck-123'))).toBe(true);
+    });
+
+    it('returns passed=false when template has RaiseError guard and required attribute is missing', async () => {
+      const assetWithGuard = {
+        id: 42,
+        name: 'Template With Guard',
+        views: {
+          html: {
+            content: `%%[
+              SET @name = AttributeValue("firstName")
+              IF RowCount(@name) == 0 THEN
+                RaiseError("firstName is required")
+              ENDIF
+            ]%%`,
+          },
+        },
+      };
+      (http.get as jest.Mock).mockResolvedValue(activeDefinition);
+      (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(assetWithGuard);
+      (de.getDeFields as jest.Mock).mockResolvedValue(['firstName', 'lastName']);
+
+      const result = await svc.preflightEmailSend('def-key', {});
+
+      expect(result.passed).toBe(false);
+      expect(result.errors.some(e => e.includes('firstName'))).toBe(true);
+    });
+
+    it('auto-normalizes attribute case and adds warning', async () => {
+      (http.get as jest.Mock).mockResolvedValue(activeDefinition);
+      (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(mockAsset);
+      (de.getDeFields as jest.Mock).mockResolvedValue(['firstName']);
+
+      const result = await svc.preflightEmailSend('def-key', { FIRSTNAME: 'John' });
+
+      expect(result.passed).toBe(true);
+      expect(result.normalizedAttributes).toEqual({ firstName: 'John' });
+      expect(result.warnings.some(w => w.includes('FIRSTNAME') && w.includes('firstName'))).toBe(true);
+    });
+
+    it('returns warning (not error) for missing attribute when no RaiseError guards exist', async () => {
+      (http.get as jest.Mock).mockResolvedValue(activeDefinition);
+      (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(mockAsset);
+      (de.getDeFields as jest.Mock).mockResolvedValue(['firstName']);
+
+      const result = await svc.preflightEmailSend('def-key', {});
+
+      expect(result.passed).toBe(true);
+      expect(result.errors).toHaveLength(0);
+      expect(result.warnings.some(w => w.includes('firstName'))).toBe(true);
+    });
+
+    it('passes when all required attributes are provided', async () => {
+      (http.get as jest.Mock).mockResolvedValue(activeDefinition);
+      (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue(mockAsset);
+      (de.getDeFields as jest.Mock).mockResolvedValue(['firstName']);
+
+      const result = await svc.preflightEmailSend('def-key', { firstName: 'John' });
+
+      expect(result.passed).toBe(true);
+      expect(result.errors).toHaveLength(0);
+      expect(result.asset).toMatchObject({ id: 42, name: 'My Template', customerKey: 'ck-123' });
+      expect(result.requiredAttributes).toContain('firstName');
+      expect(result.deFields).toEqual(['firstName']);
+    });
+  });
+
+  // ─── sendEmailWithPreflight ─────────────────────────────────────────────────
+
+  describe('sendEmailWithPreflight', () => {
+    it('returns sent=false and preflight report when definition is inactive', async () => {
+      (http.get as jest.Mock).mockResolvedValue({
+        name: 'T', status: 'Inactive', content: { customerKey: 'ck' }, subscriptions: {},
+      });
+      (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue({ id: 1, name: 'A', views: {} });
+      (de.getDeFields as jest.Mock).mockResolvedValue([]);
+
+      const result = await svc.sendEmailWithPreflight('msg-1', 'def-1', { contactKey: 'CK', to: 'x@y.com' });
+
+      expect(result.sent).toBe(false);
+      expect(result.preflight?.passed).toBe(false);
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('sends with normalized attributes when preflight passes', async () => {
+      (http.get as jest.Mock).mockResolvedValue({
+        name: 'T', status: 'Active', content: { customerKey: 'ck' }, subscriptions: { dataExtension: 'DE' },
+      });
+      (cb.getAssetByCustomerKey as jest.Mock).mockResolvedValue({ id: 1, name: 'A', views: {} });
+      (de.getDeFields as jest.Mock).mockResolvedValue(['Email']);
+      (http.post as jest.Mock).mockResolvedValue({ requestId: 'r1' });
+
+      const result = await svc.sendEmailWithPreflight('msg-1', 'def-1', {
+        contactKey: 'CK', to: 'x@y.com', attributes: { email: 'x@y.com' },
+      });
+
+      expect(result.sent).toBe(true);
+      expect(result.preflight?.passed).toBe(true);
+      expect(result.preflight?.normalizedAttributes).toEqual({ Email: 'x@y.com' });
+      expect(http.post).toHaveBeenCalledWith(
+        '/messaging/v1/email/messages/msg-1',
+        expect.objectContaining({
+          recipient: expect.objectContaining({ attributes: { Email: 'x@y.com' } }),
+        }),
+      );
+    });
+
+    it('skips preflight and sends directly when skipPreflight=true', async () => {
+      (http.post as jest.Mock).mockResolvedValue({ requestId: 'r1' });
+
+      const result = await svc.sendEmailWithPreflight(
+        'msg-1', 'def-1', { contactKey: 'CK', to: 'x@y.com' }, { skipPreflight: true },
+      );
+
+      expect(result.sent).toBe(true);
+      expect(result.preflight).toBeNull();
+      expect(http.get).not.toHaveBeenCalled();
+    });
+  });
 });

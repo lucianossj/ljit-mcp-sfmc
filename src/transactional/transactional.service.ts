@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SfmcHttpService } from '../sfmc/sfmc-http.service';
 import { CbService } from '../content-builder/cb.service';
 import { DeService } from '../data-extensions/de.service';
-import { parseAssetAttributes, ParsedAssetAttributes, extractContentBlockIds } from './ampscript-parser';
+import { parseAssetAttributes, ParsedAssetAttributes, RaiseErrorGuard, extractContentBlockIds } from './ampscript-parser';
 import { enrichWithStatusDescription } from './transactional-error-codes';
 
 export type Channel = 'email' | 'sms' | 'push';
@@ -65,6 +65,38 @@ export interface PushDefinitionBody {
     media?: { url: string; altText?: string };
   };
   subscriptions?: { dataExtension?: string };
+}
+
+export interface PreflightSummary {
+  /** true se nenhum erro bloqueante foi encontrado */
+  passed: boolean;
+  /** Erros bloqueantes — o envio NÃO será executado enquanto houver itens aqui */
+  errors: string[];
+  /** Avisos não-bloqueantes — o envio prossegue mas merece atenção */
+  warnings: string[];
+  /** Resumo da definição transacional */
+  definition: {
+    key: string;
+    name: string;
+    status: string;
+    fromEmail?: string;
+    fromName?: string;
+    subject?: string;
+    customerKey?: string;
+    dataExtension?: string;
+  };
+  /** Resumo do asset do Content Builder vinculado */
+  asset: { id: number; name: string; customerKey: string } | null;
+  /** Atributos encontrados no template via AttributeValue() */
+  requiredAttributes: string[];
+  /** Campos disponíveis na DE vinculada */
+  deFields: string[];
+  /** Atributos fornecidos após normalização de case contra a DE */
+  normalizedAttributes: Record<string, unknown>;
+  /** Guards RaiseError() encontrados no template */
+  raisedErrorGuards: RaiseErrorGuard[];
+  /** Quantidade de content blocks resolvidos recursivamente */
+  contentBlocksResolved: number;
 }
 
 @Injectable()
@@ -480,5 +512,268 @@ export class TransactionalService {
     }
 
     return { send, status, messageKey };
+  }
+
+  // ─── Pre-flight + Send ───────────────────────────────────────────────────────
+
+  /**
+   * Executa um pre-flight completo para um envio de e-mail transacional.
+   * Valida definition, asset, content blocks, AMPscript schema e atributos vs DE.
+   * Retorna um PreflightSummary com errors[] (bloqueantes) e warnings[] (não-bloqueantes).
+   */
+  async preflightEmailSend(
+    definitionKey: string,
+    attributes: Record<string, unknown> = {},
+  ): Promise<PreflightSummary> {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // 1. Fetch definition
+    let rawDefinition: Record<string, unknown>;
+    try {
+      rawDefinition = await this.getDefinition('email', definitionKey) as Record<string, unknown>;
+    } catch {
+      return {
+        passed: false,
+        errors: [`Definition "${definitionKey}" não encontrada ou inacessível.`],
+        warnings: [],
+        definition: { key: definitionKey, name: '', status: 'Unknown' },
+        asset: null,
+        requiredAttributes: [],
+        deFields: [],
+        normalizedAttributes: attributes,
+        raisedErrorGuards: [],
+        contentBlocksResolved: 0,
+      };
+    }
+
+    // 2. Extract definition metadata
+    const defContent = rawDefinition['content'] as Record<string, unknown> | undefined;
+    const subscriptions = rawDefinition['subscriptions'] as Record<string, unknown> | undefined;
+    const defStatus = String(rawDefinition['status'] ?? 'Unknown');
+    const customerKey = defContent?.['customerKey'] as string | undefined;
+    const dataExtension = subscriptions?.['dataExtension'] as string | undefined;
+
+    const definitionSummary = {
+      key: definitionKey,
+      name: String(rawDefinition['name'] ?? ''),
+      status: defStatus,
+      ...(rawDefinition['fromEmail'] && { fromEmail: String(rawDefinition['fromEmail']) }),
+      ...(rawDefinition['fromName'] && { fromName: String(rawDefinition['fromName']) }),
+      ...(rawDefinition['subject'] && { subject: String(rawDefinition['subject']) }),
+      ...(customerKey && { customerKey }),
+      ...(dataExtension && { dataExtension }),
+    };
+
+    if (defStatus !== 'Active') {
+      errors.push(
+        `Definition "${definitionKey}" está com status "${defStatus}" — precisa ser "Active" para envio.`,
+      );
+    }
+
+    // 3. Fetch and resolve asset
+    let asset: PreflightSummary['asset'] = null;
+    let attributeSchema: ParsedAssetAttributes = {
+      simpleAttributes: [],
+      jsonSchemas: [],
+      raisedErrors: [],
+      contentBlockIds: [],
+      contentBlockNames: [],
+    };
+    let contentBlocksResolved = 0;
+
+    if (!customerKey) {
+      errors.push('Definition não possui um asset vinculado (customerKey ausente em "content").');
+    } else {
+      const rawAsset = await this.cb.getAssetByCustomerKey(customerKey);
+      if (!rawAsset) {
+        errors.push(`Asset com customerKey "${customerKey}" não encontrado no Content Builder.`);
+      } else {
+        asset = {
+          id: rawAsset['id'] as number,
+          name: String(rawAsset['name'] ?? ''),
+          customerKey,
+        };
+
+        const views = rawAsset['views'] as Record<string, unknown> | undefined;
+        const html = views?.['html'] as Record<string, unknown> | undefined;
+        const rawContent = (html?.['content'] as string | undefined) ?? '';
+
+        const visitedBlocks = new Set<number>();
+        const expandedContent = await this.resolveAssetContent(rawContent, 0, visitedBlocks);
+        contentBlocksResolved = visitedBlocks.size;
+        attributeSchema = parseAssetAttributes(expandedContent);
+      }
+    }
+
+    // 4. Fetch DE fields
+    let deFields: string[] = [];
+    if (dataExtension) {
+      try {
+        deFields = await this.de.getDeFields(dataExtension);
+      } catch {
+        warnings.push(
+          `Não foi possível buscar o schema da DE "${dataExtension}". Validação de atributos ignorada.`,
+        );
+      }
+    }
+
+    // 5. Normalize attribute names (case matching against DE)
+    const deFieldsLower = new Map(deFields.map((f) => [f.toLowerCase(), f]));
+    const normalizedAttributes: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(attributes)) {
+      const exactMatch = deFields.find((f) => f === key);
+      if (exactMatch) {
+        normalizedAttributes[key] = value;
+        continue;
+      }
+
+      const caseInsensitive = deFieldsLower.get(key.toLowerCase());
+      if (caseInsensitive) {
+        normalizedAttributes[caseInsensitive] = value;
+        warnings.push(`Atributo "${key}" normalizado para "${caseInsensitive}" (case da DE).`);
+        continue;
+      }
+
+      normalizedAttributes[key] = value;
+      if (deFields.length > 0) {
+        const candidates = deFields.filter((f) =>
+          f.toLowerCase().includes(key.toLowerCase().slice(0, 4)),
+        );
+        warnings.push(
+          `Atributo "${key}" não encontrado na DE.` +
+          (candidates.length > 0 ? ` Possíveis matches: ${candidates.join(', ')}` : ''),
+        );
+      }
+    }
+
+    // 6. Check for missing template attributes
+    // Templates with RaiseError guards treat missing attributes as hard failures
+    const hasRaiseErrorGuards = attributeSchema.raisedErrors.length > 0;
+    const providedKeys = new Set(Object.keys(normalizedAttributes).map((k) => k.toLowerCase()));
+
+    for (const attr of attributeSchema.simpleAttributes) {
+      if (!providedKeys.has(attr.toLowerCase())) {
+        if (hasRaiseErrorGuards) {
+          errors.push(
+            `Atributo obrigatório "${attr}" ausente. ` +
+            `O template possui guards RaiseError() que bloquearão o envio caso não seja fornecido.`,
+          );
+        } else {
+          warnings.push(`Atributo "${attr}" encontrado no template mas não fornecido.`);
+        }
+      }
+    }
+
+    // 7. Check JSON schema variables
+    for (const schema of attributeSchema.jsonSchemas) {
+      const jsonVarLower = schema.variableName.toLowerCase();
+      const hasIt = Object.keys(normalizedAttributes).some(
+        (k) => k.toLowerCase() === jsonVarLower || k.toLowerCase().includes(jsonVarLower),
+      );
+      if (!hasIt) {
+        const pathList = [
+          ...Object.keys(schema.paths),
+          ...Object.keys(schema.dynamicPaths ?? {}),
+        ].join(', ');
+        warnings.push(
+          `Variável JSON "${schema.variableName}" esperada pelo template não foi encontrada nos atributos. ` +
+          `Paths esperados: ${pathList || '(nenhum identificado)'}`,
+        );
+      }
+    }
+
+    return {
+      passed: errors.length === 0,
+      errors,
+      warnings,
+      definition: definitionSummary,
+      asset,
+      requiredAttributes: attributeSchema.simpleAttributes,
+      deFields,
+      normalizedAttributes,
+      raisedErrorGuards: attributeSchema.raisedErrors,
+      contentBlocksResolved,
+    };
+  }
+
+  /**
+   * Executa pre-flight e, se passar, envia o e-mail com atributos normalizados.
+   * Se skipPreflight=true, envia diretamente sem validação prévia.
+   */
+  async sendEmailWithPreflight(
+    messageKey: string,
+    definitionKey: string,
+    recipient: { contactKey: string; to: string; attributes?: Record<string, unknown> },
+    options: { skipPreflight?: boolean } = {},
+  ): Promise<{
+    preflight: PreflightSummary | null;
+    sent: boolean;
+    send?: unknown;
+    messageKey: string;
+  }> {
+    if (options.skipPreflight) {
+      const send = await this.sendEmail(messageKey, definitionKey, recipient);
+      return { preflight: null, sent: true, send, messageKey };
+    }
+
+    const preflight = await this.preflightEmailSend(definitionKey, recipient.attributes ?? {});
+
+    if (!preflight.passed) {
+      return { preflight, sent: false, messageKey };
+    }
+
+    const normalizedRecipient = { ...recipient, attributes: preflight.normalizedAttributes };
+    const send = await this.sendEmail(messageKey, definitionKey, normalizedRecipient);
+    return { preflight, sent: true, send, messageKey };
+  }
+
+  /**
+   * Executa pre-flight, envia (se passou) e aguarda status final com polling.
+   */
+  async sendEmailAndCheckWithPreflight(
+    messageKey: string,
+    definitionKey: string,
+    recipient: { contactKey: string; to: string; attributes?: Record<string, unknown> },
+    options: { skipPreflight?: boolean; maxAttempts?: number; intervalMs?: number } = {},
+  ): Promise<{
+    preflight: PreflightSummary | null;
+    sent: boolean;
+    send?: unknown;
+    status?: unknown;
+    messageKey: string;
+  }> {
+    const { skipPreflight, maxAttempts = 4, intervalMs = 2000 } = options;
+
+    const result = await this.sendEmailWithPreflight(messageKey, definitionKey, recipient, { skipPreflight });
+    if (!result.sent) {
+      return result;
+    }
+
+    let status: unknown = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      try {
+        const statusResult = await this.getMessageStatus('email', messageKey);
+        const r = statusResult as Record<string, unknown>;
+        const event = String(r['eventCategoryType'] ?? '');
+        if (
+          event.includes('Sent') ||
+          event.includes('Bounce') ||
+          event.includes('NotSent') ||
+          event.includes('Error') ||
+          r['statusCode'] !== undefined
+        ) {
+          status = statusResult;
+          break;
+        }
+        status = statusResult;
+      } catch {
+        // Status not yet available — retry
+      }
+    }
+
+    return { ...result, status };
   }
 }

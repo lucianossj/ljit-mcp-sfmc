@@ -214,32 +214,76 @@ export class TransactionalToolsService {
     );
 
     server.tool(
+      'txn_preflight_email',
+      'Valida completamente um envio de e-mail transacional SEM enviá-lo (dry run). ' +
+      'Verifica: status da definition (Active/Inactive), existência do asset no Content Builder, ' +
+      'resolução recursiva de content blocks, atributos obrigatórios via análise AMPscript, ' +
+      'guards RaiseError() que bloqueiam o envio, e normalização de nomes de atributos contra o schema da DE. ' +
+      'Retorna passed=true/false, errors[] (bloqueantes), warnings[] (não-bloqueantes), ' +
+      'normalizedAttributes (atributos com nomes corrigidos prontos para uso) e requiredAttributes. ' +
+      'Use antes de txn_send_email para garantir que o payload está correto.',
+      {
+        definitionKey: z.string().describe('Chave da definição de e-mail a inspecionar'),
+        attributes: z.record(z.unknown()).optional().default({}).describe(
+          'Atributos que serão usados no envio — serão validados e normalizados contra o schema da DE',
+        ),
+      },
+      toolCall(({ definitionKey, attributes }) =>
+        this.svc.preflightEmailSend(definitionKey, attributes as Record<string, unknown>),
+      ),
+    );
+
+    server.tool(
       'txn_send_email',
-      'Envia um e-mail transacional para um único destinatário usando uma definição. ' +
-      'Use txn_inspect_email_definition para descobrir os atributos necessários antes de enviar. ' +
+      'Envia um e-mail transacional para um único destinatário. ' +
+      'Por padrão executa um pre-flight automático antes do envio: valida a definition, o asset do Content Builder, ' +
+      'os content blocks referenciados, os atributos obrigatórios (AMPscript + RaiseError guards) e normaliza os ' +
+      'nomes de atributos contra o schema da DE. Se houver erros bloqueantes, o e-mail NÃO é enviado e o relatório ' +
+      'de pre-flight é retornado com sent=false e a lista de correções necessárias. ' +
+      'Use skipPreflight=true apenas para envios de produção onde a validação já foi feita. ' +
       'O messageKey é opcional e será gerado automaticamente se não informado.',
       {
         messageKey: z.string().optional().describe('Chave única para rastreamento (gerada automaticamente se omitida)'),
         definitionKey: z.string().describe('Chave da definição de e-mail a ser usada'),
         recipient: recipientSchema,
+        skipPreflight: z.boolean().optional().default(false).describe(
+          'Pula o pre-flight e envia diretamente. Use apenas quando já validou com txn_preflight_email.',
+        ),
       },
-      toolCall(({ messageKey, definitionKey, recipient }) =>
-        this.svc.sendEmail(messageKey ?? generateMessageKey(), definitionKey, recipient),
+      toolCall(({ messageKey, definitionKey, recipient, skipPreflight }) =>
+        this.svc.sendEmailWithPreflight(
+          messageKey ?? generateMessageKey(),
+          definitionKey,
+          recipient,
+          { skipPreflight },
+        ),
       ),
     );
 
     server.tool(
       'txn_send_email_and_check',
       'Envia um e-mail transacional e aguarda o status de entrega final (polling automático por até ~8s). ' +
-      'Retorna o resultado do envio e o status consolidado em uma única chamada, incluindo descrição legível do status. ' +
-      'Ideal para testes e validação de fluxo sem precisar chamar txn_get_message_status separadamente.',
+      'Executa pre-flight automático antes do envio (mesma validação do txn_send_email): ' +
+      'valida definition, asset, content blocks, atributos AMPscript, RaiseError guards e normaliza nomes contra a DE. ' +
+      'Se houver erros bloqueantes, retorna sent=false com o relatório de pre-flight sem enviar. ' +
+      'Retorna preflight + resultado do envio + status consolidado em uma única chamada. ' +
+      'Ideal para testes e validação de fluxo completo. ' +
+      'O messageKey é opcional e será gerado automaticamente se não informado.',
       {
         messageKey: z.string().optional().describe('Chave única para rastreamento (gerada automaticamente se omitida)'),
         definitionKey: z.string().describe('Chave da definição de e-mail a ser usada'),
         recipient: recipientSchema,
+        skipPreflight: z.boolean().optional().default(false).describe(
+          'Pula o pre-flight e envia diretamente. Use apenas quando já validou com txn_preflight_email.',
+        ),
       },
-      toolCall(({ messageKey, definitionKey, recipient }) =>
-        this.svc.sendEmailAndCheck(messageKey ?? generateMessageKey(), definitionKey, recipient),
+      toolCall(({ messageKey, definitionKey, recipient, skipPreflight }) =>
+        this.svc.sendEmailAndCheckWithPreflight(
+          messageKey ?? generateMessageKey(),
+          definitionKey,
+          recipient,
+          { skipPreflight },
+        ),
       ),
     );
 
