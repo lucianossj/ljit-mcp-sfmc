@@ -237,11 +237,13 @@ export class TransactionalToolsService {
       'txn_send_email',
       'Envia um e-mail transacional para um único destinatário. ' +
       'Por padrão executa um pre-flight automático antes do envio: valida a definition, o asset do Content Builder, ' +
-      'os content blocks referenciados, os atributos obrigatórios (AMPscript + RaiseError guards) e normaliza os ' +
+      'os content blocks referenciados, os atributos obrigatórios (campos isRequired da DE + AMPscript + RaiseError guards) e normaliza os ' +
       'nomes de atributos contra o schema da DE. Se houver erros bloqueantes, o e-mail NÃO é enviado e o relatório ' +
       'de pre-flight é retornado com sent=false e a lista de correções necessárias. ' +
       'Use skipPreflight=true apenas para envios de produção onde a validação já foi feita. ' +
-      'O messageKey é opcional e será gerado automaticamente se não informado.',
+      'O messageKey é opcional e será gerado automaticamente se não informado. ' +
+      'IMPORTANTE: Para envios de teste onde é necessário confirmar a entrega real, use txn_send_test_email, ' +
+      'que além do pre-flight completo aguarda a confirmação de status do SFMC antes de reportar sucesso.',
       {
         messageKey: z.string().optional().describe('Chave única para rastreamento (gerada automaticamente se omitida)'),
         definitionKey: z.string().describe('Chave da definição de e-mail a ser usada'),
@@ -262,12 +264,11 @@ export class TransactionalToolsService {
 
     server.tool(
       'txn_send_email_and_check',
-      'Envia um e-mail transacional e aguarda o status de entrega final (polling automático por até ~8s). ' +
-      'Executa pre-flight automático antes do envio (mesma validação do txn_send_email): ' +
-      'valida definition, asset, content blocks, atributos AMPscript, RaiseError guards e normaliza nomes contra a DE. ' +
+      'Envia um e-mail transacional e aguarda o status de entrega final (polling automático por até ~10s). ' +
+      'Executa pre-flight automático antes do envio: ' +
+      'valida definition, asset, content blocks, campos isRequired da DE, atributos AMPscript, RaiseError guards e normaliza nomes contra a DE. ' +
       'Se houver erros bloqueantes, retorna sent=false com o relatório de pre-flight sem enviar. ' +
       'Retorna preflight + resultado do envio + status consolidado em uma única chamada. ' +
-      'Ideal para testes e validação de fluxo completo. ' +
       'O messageKey é opcional e será gerado automaticamente se não informado.',
       {
         messageKey: z.string().optional().describe('Chave única para rastreamento (gerada automaticamente se omitida)'),
@@ -283,6 +284,31 @@ export class TransactionalToolsService {
           definitionKey,
           recipient,
           { skipPreflight },
+        ),
+      ),
+    );
+
+    server.tool(
+      'txn_send_test_email',
+      'Fluxo completo e confiável para envio de e-mail de teste. ' +
+      'SEMPRE use esta tool quando o usuário pedir um envio de teste — ela garante transparência total do resultado. ' +
+      'Executa: (1) pre-flight completo (definition, asset, campos isRequired da DE, AMPscript, RaiseError guards, normalização de atributos); ' +
+      '(2) se o pre-flight falhar, retorna a lista exata de campos obrigatórios ausentes e NÃO envia; ' +
+      '(3) se passar, envia com atributos normalizados; ' +
+      '(4) aguarda status real do SFMC com polling automático (até ~10s); ' +
+      '(5) retorna success=true APENAS se o SFMC confirmar a entrega (EmailSent). ' +
+      'Campos "attributes" devem conter todos os campos obrigatórios da DE e do template AMPscript. ' +
+      'O messageKey é opcional e será gerado automaticamente se não informado.',
+      {
+        messageKey: z.string().optional().describe('Chave única para rastreamento (gerada automaticamente se omitida)'),
+        definitionKey: z.string().describe('Chave da definição de e-mail a ser usada'),
+        recipient: recipientSchema,
+      },
+      toolCall(({ messageKey, definitionKey, recipient }) =>
+        this.svc.sendTestEmail(
+          messageKey ?? generateMessageKey(),
+          definitionKey,
+          recipient,
         ),
       ),
     );

@@ -166,4 +166,37 @@ describe('DeService', () => {
       await expect(svc.getDataExtension('UNKNOWN')).rejects.toThrow("não encontrada");
     });
   });
+
+  describe('getDeFieldsWithMetadata', () => {
+    const mockDE = {
+      id: 'uuid-1', name: 'TestDE',
+      fields: [
+        { name: 'SubscriberKey', fieldType: 'Text', isPrimaryKey: true, isRequired: true },
+        { name: 'NomeCliente', fieldType: 'Text', isPrimaryKey: false, isRequired: true },
+        { name: 'Status', fieldType: 'Text', isPrimaryKey: false, isRequired: true, defaultValue: 'Ativo' },
+        { name: 'Observacao', fieldType: 'Text', isPrimaryKey: false, isRequired: false },
+      ],
+    };
+
+    beforeEach(() => {
+      (http.get as jest.Mock)
+        .mockResolvedValueOnce({ items: [{ id: 'uuid-1', key: 'TEST_KEY' }] })
+        .mockResolvedValueOnce(mockDE);
+    });
+
+    it('returns field metadata with correct types', async () => {
+      const result = await svc.getDeFieldsWithMetadata('TEST_KEY');
+
+      expect(result).toHaveLength(4);
+      expect(result[0]).toEqual({ name: 'SubscriberKey', fieldType: 'Text', isPrimaryKey: true, isRequired: true, defaultValue: undefined });
+      expect(result[1]).toEqual({ name: 'NomeCliente', fieldType: 'Text', isPrimaryKey: false, isRequired: true, defaultValue: undefined });
+      expect(result[2]).toMatchObject({ name: 'Status', defaultValue: 'Ativo', isRequired: true });
+      expect(result[3]).toMatchObject({ name: 'Observacao', isRequired: false });
+    });
+
+    it('getDeFields delegates to getDeFieldsWithMetadata returning names only', async () => {
+      const result = await svc.getDeFields('TEST_KEY');
+      expect(result).toEqual(['SubscriberKey', 'NomeCliente', 'Status', 'Observacao']);
+    });
+  });
 });

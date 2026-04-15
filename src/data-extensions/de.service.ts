@@ -150,12 +150,35 @@ export class DeService {
   }
 
   /**
+   * Retorna metadados completos dos campos de uma Data Extension.
+   * Inclui name, isRequired, isPrimaryKey, fieldType e defaultValue.
+   */
+  async getDeFieldsWithMetadata(externalKey: string): Promise<Array<{
+    name: string;
+    isRequired: boolean;
+    isPrimaryKey: boolean;
+    fieldType: string;
+    defaultValue?: string;
+  }>> {
+    const raw = await this.getDataExtension(externalKey) as Record<string, unknown>;
+    const fields = (raw['fields'] as Array<Record<string, unknown>> | undefined) ?? [];
+    return fields
+      .filter((f) => Boolean(f['name']))
+      .map((f) => ({
+        name: f['name'] as string,
+        isRequired: Boolean(f['isRequired']),
+        isPrimaryKey: Boolean(f['isPrimaryKey']),
+        fieldType: String(f['fieldType'] ?? 'Text'),
+        defaultValue: f['defaultValue'] as string | undefined,
+      }));
+  }
+
+  /**
    * Retorna a lista de nomes de campos de uma Data Extension pelo externalKey.
    * Útil para validar/normalizar attribute names antes de um envio transacional.
    */
   async getDeFields(externalKey: string): Promise<string[]> {
-    const raw = await this.getDataExtension(externalKey) as Record<string, unknown>;
-    const fields = (raw['fields'] as Array<Record<string, unknown>> | undefined) ?? [];
-    return fields.map((f) => f['name'] as string).filter(Boolean);
+    const fields = await this.getDeFieldsWithMetadata(externalKey);
+    return fields.map((f) => f.name);
   }
 }

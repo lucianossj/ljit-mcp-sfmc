@@ -91,6 +91,8 @@ export interface PreflightSummary {
   requiredAttributes: string[];
   /** Campos disponíveis na DE vinculada */
   deFields: string[];
+  /** Campos obrigatórios da DE (isRequired=true sem defaultValue) */
+  requiredDeFields: string[];
   /** Atributos fornecidos após normalização de case contra a DE */
   normalizedAttributes: Record<string, unknown>;
   /** Guards RaiseError() encontrados no template */
@@ -606,11 +608,16 @@ export class TransactionalService {
       }
     }
 
-    // 4. Fetch DE fields
+    // 4. Fetch DE fields with metadata
     let deFields: string[] = [];
+    let requiredDeFields: string[] = [];
     if (dataExtension) {
       try {
-        deFields = await this.de.getDeFields(dataExtension);
+        const deFieldsMeta = await this.de.getDeFieldsWithMetadata(dataExtension);
+        deFields = deFieldsMeta.map((f) => f.name);
+        requiredDeFields = deFieldsMeta
+          .filter((f) => f.isRequired && !f.isPrimaryKey && !f.defaultValue)
+          .map((f) => f.name);
       } catch {
         warnings.push(
           `Não foi possível buscar o schema da DE "${dataExtension}". Validação de atributos ignorada.`,
@@ -648,7 +655,20 @@ export class TransactionalService {
       }
     }
 
-    // 6. Check for missing template attributes
+    // 6. Check required DE fields against provided attributes
+    if (requiredDeFields.length > 0) {
+      const providedKeysForDE = new Set(Object.keys(normalizedAttributes).map((k) => k.toLowerCase()));
+      for (const field of requiredDeFields) {
+        if (!providedKeysForDE.has(field.toLowerCase())) {
+          errors.push(
+            `Campo obrigatório da DE "${dataExtension}" ausente: "${field}". ` +
+            `Este campo é isRequired=true na DE e não possui valor padrão.`,
+          );
+        }
+      }
+    }
+
+    // 7. Check for missing template attributes
     // Templates with RaiseError guards treat missing attributes as hard failures
     const hasRaiseErrorGuards = attributeSchema.raisedErrors.length > 0;
     const providedKeys = new Set(Object.keys(normalizedAttributes).map((k) => k.toLowerCase()));
@@ -666,7 +686,7 @@ export class TransactionalService {
       }
     }
 
-    // 7. Check JSON schema variables
+    // 8. Check JSON schema variables
     for (const schema of attributeSchema.jsonSchemas) {
       const jsonVarLower = schema.variableName.toLowerCase();
       const hasIt = Object.keys(normalizedAttributes).some(
@@ -692,6 +712,7 @@ export class TransactionalService {
       asset,
       requiredAttributes: attributeSchema.simpleAttributes,
       deFields,
+      requiredDeFields,
       normalizedAttributes,
       raisedErrorGuards: attributeSchema.raisedErrors,
       contentBlocksResolved,
@@ -744,7 +765,7 @@ export class TransactionalService {
     status?: unknown;
     messageKey: string;
   }> {
-    const { skipPreflight, maxAttempts = 4, intervalMs = 2000 } = options;
+    const { skipPreflight, maxAttempts = 5, intervalMs = 2000 } = options;
 
     const result = await this.sendEmailWithPreflight(messageKey, definitionKey, recipient, { skipPreflight });
     if (!result.sent) {
@@ -775,5 +796,119 @@ export class TransactionalService {
     }
 
     return { ...result, status };
+  }
+
+  /**
+   * Fluxo completo de envio de teste:
+   * 1. Pre-flight com validação de campos obrigatórios da DE e AMPscript
+   * 2. Se preflight falhar → retorna lista de campos necessários, NÃO envia
+   * 3. Se passar → envia com atributos normalizados
+   * 4. Polling de status até confirmação final (até ~10s)
+   * 5. Retorna success=true APENAS se eventCategoryType confirmar entrega (EmailSent)
+   */
+  async sendTestEmail(
+    messageKey: string,
+    definitionKey: string,
+    recipient: { contactKey: string; to: string; attributes?: Record<string, unknown> },
+    options: { maxAttempts?: number; intervalMs?: number } = {},
+  ): Promise<{
+    success: boolean;
+    outcome: 'sent' | 'failed' | 'preflight_blocked' | 'unknown';
+    messageKey: string;
+    preflight: PreflightSummary;
+    send?: unknown;
+    status?: unknown;
+    summary: string;
+  }> {
+    const { maxAttempts = 5, intervalMs = 2000 } = options;
+
+    // 1. Run full preflight
+    const preflight = await this.preflightEmailSend(definitionKey, recipient.attributes ?? {});
+
+    if (!preflight.passed) {
+      const missingDeFields = preflight.requiredDeFields.filter(
+        (f) => !Object.keys(preflight.normalizedAttributes).some((k) => k.toLowerCase() === f.toLowerCase()),
+      );
+      const lines: string[] = ['Pré-flight bloqueou o envio. Corrija os itens abaixo antes de tentar novamente:'];
+      preflight.errors.forEach((e, i) => lines.push(`  ${i + 1}. ${e}`));
+      if (missingDeFields.length > 0) {
+        lines.push(`\nCampos obrigatórios da DE ausentes: ${missingDeFields.join(', ')}`);
+      }
+      return {
+        success: false,
+        outcome: 'preflight_blocked',
+        messageKey,
+        preflight,
+        summary: lines.join('\n'),
+      };
+    }
+
+    // 2. Send with normalized attributes
+    const normalizedRecipient = { ...recipient, attributes: preflight.normalizedAttributes };
+    let send: unknown;
+    try {
+      send = await this.sendEmail(messageKey, definitionKey, normalizedRecipient);
+    } catch (err) {
+      return {
+        success: false,
+        outcome: 'failed',
+        messageKey,
+        preflight,
+        send: err,
+        summary: `Erro ao enviar: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+
+    // 3. Poll for delivery confirmation
+    let status: unknown = null;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      try {
+        const statusResult = await this.getMessageStatus('email', messageKey);
+        const r = statusResult as Record<string, unknown>;
+        const event = String(r['eventCategoryType'] ?? '');
+        if (
+          event.includes('Sent') ||
+          event.includes('Bounce') ||
+          event.includes('NotSent') ||
+          event.includes('Error') ||
+          r['statusCode'] !== undefined
+        ) {
+          status = statusResult;
+          break;
+        }
+        status = statusResult;
+      } catch {
+        // Not yet available — retry
+      }
+    }
+
+    // 4. Classify outcome
+    const statusRec = status as Record<string, unknown> | null;
+    const event = String(statusRec?.['eventCategoryType'] ?? '');
+    const statusCode = statusRec?.['statusCode'];
+
+    let outcome: 'sent' | 'failed' | 'unknown';
+    let success: boolean;
+    let summary: string;
+
+    if (event.toLowerCase().includes('notsent') || event.toLowerCase().includes('error') || event.toLowerCase().includes('bounce')) {
+      outcome = 'failed';
+      success = false;
+      const msg = String(statusRec?.['statusMessage'] ?? event);
+      summary = `E-mail enviado para a fila, mas SFMC reportou falha: ${msg} (código ${statusCode ?? 'N/A'}).`;
+    } else if (event.toLowerCase().includes('sent')) {
+      outcome = 'sent';
+      success = true;
+      summary = `E-mail enviado e confirmado com sucesso para ${recipient.to}.`;
+    } else {
+      outcome = 'unknown';
+      success = false;
+      summary = status
+        ? `E-mail enviado mas status final incerto após polling. Último status: ${event || JSON.stringify(status)}`
+        : `E-mail enviado mas status não disponível após polling de ${maxAttempts * intervalMs / 1000}s. Verifique manualmente.`;
+    }
+
+    return { success, outcome, messageKey, preflight, send, status, summary };
   }
 }
