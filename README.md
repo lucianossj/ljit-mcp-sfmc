@@ -3,9 +3,12 @@
 [![npm version](https://img.shields.io/npm/v/ljit-mcp-sfmc)](https://www.npmjs.com/package/ljit-mcp-sfmc)
 [![Node.js >=18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/lucianossj/ljit-mcp-sfmc/pulls)
+[![GitHub Stars](https://img.shields.io/github/stars/lucianossj/ljit-mcp-sfmc?style=social)](https://github.com/lucianossj/ljit-mcp-sfmc)
 
 MCP server para o **Salesforce Marketing Cloud (SFMC)**. Expõe **29 ferramentas** que permitem que agentes de IA (Claude, Cursor, VS Code, Windsurf, etc.) gerenciem Data Extensions, assets do Content Builder e enviem mensagens transacionais — tudo via linguagem natural, sem abrir a interface do SFMC.
+
+> 🌐 **Projeto open-source** — código disponível em [github.com/lucianossj/ljit-mcp-sfmc](https://github.com/lucianossj/ljit-mcp-sfmc). Contribuições, sugestões e Pull Requests são muito bem-vindos!
 
 ---
 
@@ -304,15 +307,16 @@ Cada domínio segue o mesmo padrão:
 
 ## Contribuindo
 
-> **Contributions are welcome!** This project is open-source and community-driven. Whether you're fixing a bug, adding support for a new SFMC API, or improving the documentation — your contribution matters.
+Este projeto é **100% open-source** (MIT) e vive da comunidade. O repositório está em:
 
----
+**🔗 [github.com/lucianossj/ljit-mcp-sfmc](https://github.com/lucianossj/ljit-mcp-sfmc)**
 
-Contribuições são bem-vindas e encorajadas! Este projeto segue o modelo open-source e aceita qualquer tipo de colaboração — desde correções de bugs até novas ferramentas que ampliem o suporte às APIs do Salesforce Marketing Cloud.
+Contribuições são bem-vindas e encorajadas — desde correções de bugs até novas ferramentas que ampliem o suporte às APIs do Salesforce Marketing Cloud. Se você usa SFMC com IA e tem uma ideia ou melhoria, **abra um PR**! Cada contribuição ajuda a tornar a ferramenta mais robusta para toda a comunidade.
 
 ### Como contribuir
 
-1. **Abra uma Issue** antes de implementar — descreva o bug, a feature ou a melhoria que deseja propor. Isso evita trabalho duplicado e permite alinhar expectativas.
+1. **Abra uma Issue** antes de implementar — descreva o bug, a feature ou a melhoria que deseja propor. Isso evita trabalho duplicado e permite alinhar expectativas.  
+   👉 [github.com/lucianossj/ljit-mcp-sfmc/issues/new](https://github.com/lucianossj/ljit-mcp-sfmc/issues/new)
 2. **Fork** o repositório e crie uma branch descritiva:
    ```
    feat/cb-duplicate-asset
@@ -355,5 +359,6 @@ Distribuído sob a licença **MIT**. Consulte o arquivo [LICENSE](LICENSE) para 
 ---
 
 <div align="center">
-  Feito com ☕ para a comunidade de desenvolvedores SFMC
+  Feito com ☕ para a comunidade de desenvolvedores SFMC<br>
+  <a href="https://github.com/lucianossj/ljit-mcp-sfmc">⭐ github.com/lucianossj/ljit-mcp-sfmc</a>
 </div>
