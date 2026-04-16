@@ -316,15 +316,13 @@ export class TransactionalService {
       attributes?: Record<string, unknown>;
     },
   ): Promise<unknown> {
-    return this.http.post(`/push/v1/messageContact/${encodeURIComponent(definitionKey)}/send`, {
+    return this.http.post(`/messaging/v1/push/messages/`, {
       definitionKey,
-      recipients: [
-        {
-          contactKey: recipient.contactKey,
-          messageKey,
-          ...(recipient.attributes ? { attributes: recipient.attributes } : {}),
-        },
-      ],
+      recipient: {
+        contactKey: recipient.contactKey,
+        messageKey,
+        ...(recipient.attributes ? { attributes: recipient.attributes } : {}),
+      },
     });
   }
 
