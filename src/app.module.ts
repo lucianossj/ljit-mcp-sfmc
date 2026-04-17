@@ -5,6 +5,7 @@ import { McpModule } from './mcp/mcp.module';
 import { DataExtensionsModule } from './data-extensions/de.module';
 import { ContentBuilderModule } from './content-builder/cb.module';
 import { TransactionalModule } from './transactional/transactional.module';
+import { JourneysModule } from './journeys/journeys.module';
 
 @Module({
   imports: [
@@ -13,7 +14,8 @@ import { TransactionalModule } from './transactional/transactional.module';
     DataExtensionsModule,
     ContentBuilderModule,
     TransactionalModule,
+    JourneysModule,
     McpModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }

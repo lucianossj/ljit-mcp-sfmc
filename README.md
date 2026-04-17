@@ -6,7 +6,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/lucianossj/ljit-mcp-sfmc/pulls)
 [![GitHub Stars](https://img.shields.io/github/stars/lucianossj/ljit-mcp-sfmc?style=social)](https://github.com/lucianossj/ljit-mcp-sfmc)
 
-MCP server para o **Salesforce Marketing Cloud (SFMC)**. Expõe **29 ferramentas** que permitem que agentes de IA (Claude, Cursor, VS Code, Windsurf, etc.) gerenciem Data Extensions, assets do Content Builder e enviem mensagens transacionais — tudo via linguagem natural, sem abrir a interface do SFMC.
+MCP server para o **Salesforce Marketing Cloud (SFMC)**. Expõe **35 ferramentas** que permitem que agentes de IA (Claude, Cursor, VS Code, Windsurf, etc.) gerenciem Data Extensions, assets do Content Builder, jornadas do Journey Builder e enviem mensagens transacionais — tudo via linguagem natural, sem abrir a interface do SFMC.
 
 > 🌐 **Projeto open-source** — código disponível em [github.com/lucianossj/ljit-mcp-sfmc](https://github.com/lucianossj/ljit-mcp-sfmc). Contribuições, sugestões e Pull Requests são muito bem-vindos!
 
@@ -25,7 +25,7 @@ Cliente MCP (Claude, Cursor…)
   ljit-mcp-sfmc  ──── OAuth2 ────▶  SFMC Auth API
         │                            (token cache)
         └──── REST ──────────────▶  SFMC REST APIs
-                                    (DE / CB / Txn)
+                  (DE / CB / Journeys / Txn)
 ```
 
 ---
@@ -53,6 +53,16 @@ Cliente MCP (Claude, Cursor…)
 | `cb_delete_asset` | Remove um asset pelo ID |
 | `cb_list_folders` | Lista pastas/categorias (opcionalmente filtradas por pasta pai) |
 | `cb_create_folder` | Cria uma nova pasta no Content Builder |
+
+### Journeys (`jrn_*`)
+
+| Ferramenta | O que faz |
+|---|---|
+| `jrn_list` | Lista jornadas do Journey Builder com filtros por nome/descrição, status e suporte a varredura completa com `fetchAll` |
+| `jrn_get` | Retorna os detalhes de uma jornada pelo ID, com opção de informar uma versão específica |
+| `jrn_get_event_definition_by_key` | Retorna uma Event Definition do Journey Builder pela chave |
+| `jrn_get_event_definition_by_id` | Retorna uma Event Definition do Journey Builder pelo ID |
+| `jrn_resolve_entry_de` | Resolve a Data Extension de entrada de uma jornada usando a trigger e, se necessário, a Event Definition |
 
 ### Transactional Messaging (`txn_*`)
 
@@ -96,6 +106,7 @@ Cliente MCP (Claude, Cursor…)
 - Uma **installed package** no SFMC com as seguintes permissões de API:
   - Data Extensions: leitura e escrita
   - Content Builder: leitura e escrita
+  - Journey Builder / Interactions: leitura
   - Transactional Messaging: leitura, escrita e envio
 
 ---
@@ -223,25 +234,36 @@ Adicione ao `~/.codeium/windsurf/mcp_config.json`:
 Uma vez configurado, você pode interagir com o SFMC em linguagem natural:
 
 **Data Extensions**
+
 - *"Liste todas as DEs com o prefixo `Leads_`."*
 - *"Mostre o schema da DE `Clientes_Ativos` — quais campos ela tem?"*
 - *"Crie uma Data Extension chamada `Opt-Outs_Q2` com os campos Email (EmailAddress, PK), DataSaida (Date) e Motivo (Text, 255)."*
 - *"Insira esses 3 registros na DE `Pedidos_2024`."*
 
 **Content Builder**
+
 - *"Liste todos os emails HTML na pasta de templates de boas-vindas."*
 - *"Mostre o conteúdo completo do asset com ID 98765."*
 - *"Atualize o subject do email `Confirmacao-Pedido-v3` para 'Seu pedido foi confirmado 🎉'."*
 
 **Transactional Messaging — Fluxo de envio seguro**
+
 - *"Inspecione a definition `boas-vindas-pro` e me diga quais atributos são obrigatórios para o envio."*
-- *"Faça um preflight do envio para joao@empresa.com usando a definition `boas-vindas-pro` com os atributos Nome='João' e Plano='Pro'. Não envie ainda."*
+- *"Faça um preflight do envio para <joao@empresa.com> usando a definition `boas-vindas-pro` com os atributos Nome='João' e Plano='Pro'. Não envie ainda."*
 - *"O preflight passou? Então envia."*
-- *"Envie o e-mail `boas-vindas-pro` para joao@empresa.com e me mostre o status de entrega assim que chegar."*
+- *"Envie o e-mail `boas-vindas-pro` para <joao@empresa.com> e me mostre o status de entrega assim que chegar."*
 
 **Transactional Messaging — Outros canais**
+
 - *"Envie um SMS pela definition `alerta-fraude` para +5511999990000 com o atributo Valor='R$ 350,00'."*
 - *"Qual o status de entrega da mensagem com chave `msg-abc-123`?"*
+
+**Journey Builder**
+
+- *"Liste as jornadas com status Running e nome contendo 'Welcome'."*
+- *"Mostre os detalhes da jornada `5f7b4d1e-1234-5678-9abc-def012345678`."*
+- *"Resolva a Data Extension de entrada da jornada `5f7b4d1e-1234-5678-9abc-def012345678`."*
+- *"Busque a Event Definition com chave `APIEvent-LeadEntry`."*
 
 ---
 
@@ -291,6 +313,7 @@ src/
   mcp/tool-handler.ts      — wrapper toolCall() usado por todos os handlers
   data-extensions/         — de.service.ts + de.tools.ts
   content-builder/         — cb.service.ts + cb.tools.ts
+  journeys/                — journeys.service.ts + journeys.tools.ts
   transactional/           — transactional.service.ts + transactional.tools.ts + ampscript-parser.ts
 ```
 
@@ -318,11 +341,13 @@ Contribuições são bem-vindas e encorajadas — desde correções de bugs até
 1. **Abra uma Issue** antes de implementar — descreva o bug, a feature ou a melhoria que deseja propor. Isso evita trabalho duplicado e permite alinhar expectativas.  
    👉 [github.com/lucianossj/ljit-mcp-sfmc/issues/new](https://github.com/lucianossj/ljit-mcp-sfmc/issues/new)
 2. **Fork** o repositório e crie uma branch descritiva:
+
    ```
    feat/cb-duplicate-asset
    fix/auth-token-refresh-race-condition
    docs/add-cursor-configuration-example
    ```
+
 3. **Implemente** seguindo as convenções do projeto (descritas abaixo)
 4. **Escreva testes** — cada `<domain>.service.ts` deve ter um `<domain>.service.spec.ts` cobrindo os novos comportamentos, usando `axios-mock-adapter` para mockar as chamadas HTTP
 5. Certifique-se de que `npm test`, `npm run typecheck` e `npm run lint` passam sem erros
@@ -343,7 +368,7 @@ Contribuições são bem-vindas e encorajadas — desde correções de bugs até
 
 Se você quer contribuir mas não sabe por onde começar, aqui estão algumas sugestões:
 
-- 🚀 **Novos domínios SFMC:** Journey Builder, Automation Studio, Contact Builder, Push Notifications (MobilePush)
+- 🚀 **Novos domínios SFMC:** Automation Studio, Contact Builder, Push Notifications (MobilePush)
 - 🔍 **Melhorias em DE:** suporte a `de_delete_rows`, listagem de todas as DEs sem filtro obrigatório
 - 📧 **Melhorias em Transactional:** suporte a `cc`/`bcc` em e-mails, envio push batch
 - 🧪 **Cobertura de testes:** aumentar a cobertura nos módulos `content-builder` e `transactional`
