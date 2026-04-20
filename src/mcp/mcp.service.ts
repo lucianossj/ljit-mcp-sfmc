@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { DeToolsService } from '../data-extensions/de.tools';
 import { CbToolsService } from '../content-builder/cb.tools';
 import { TransactionalToolsService } from '../transactional/transactional.tools';
+import { JourneysToolsService } from '../journeys/journeys.tools';
 
 @Injectable()
 export class McpService {
@@ -13,6 +14,7 @@ export class McpService {
     private readonly deTools: DeToolsService,
     private readonly cbTools: CbToolsService,
     private readonly transactionalTools: TransactionalToolsService,
+    private readonly journeysTools: JourneysToolsService,
   ) {
     this.server = new McpServer({
       name: 'mcp-sfmc',
@@ -24,6 +26,7 @@ export class McpService {
     this.deTools.register(this.server);
     this.cbTools.register(this.server);
     this.transactionalTools.register(this.server);
+    this.journeysTools.register(this.server);
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
