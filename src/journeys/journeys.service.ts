@@ -36,7 +36,7 @@ export class JourneysService {
     constructor(private readonly http: SfmcHttpService) { }
 
     async listJourneys(options: JourneyListOptions = {}): Promise<unknown> {
-        const safePage = this.coerceInt(options.page, 1) ?? 1;
+        const safePage = Math.max(1, this.coerceInt(options.page, 1) ?? 1);
         const safePageSize = Math.max(1, Math.min(this.coerceInt(options.pageSize, 25) ?? 25, 2500));
 
         const baseParams: Record<string, unknown> = {
@@ -62,7 +62,8 @@ export class JourneysService {
         let firstPayload: JsonRecord | null = null;
         const allItems: JsonRecord[] = [];
 
-        while (fetchedPages < 200) {
+        const PAGE_LIMIT = 200;
+        while (fetchedPages < PAGE_LIMIT) {
             const payload = await this.http.get<JsonRecord>('/interaction/v1/interactions', {
                 ...baseParams,
                 $page: currentPage,
@@ -82,6 +83,10 @@ export class JourneysService {
             }
 
             currentPage += 1;
+        }
+
+        if (fetchedPages >= PAGE_LIMIT) {
+            console.warn(`[JourneysService] fetchAll reached page limit (${PAGE_LIMIT}). Data may be incomplete.`);
         }
 
         return {
@@ -239,8 +244,8 @@ export class JourneysService {
     }
 
     private hasMoreData(payload: JsonRecord, pageItemCount: number, pageSize: number): boolean {
-        if (typeof payload.hasMore === 'boolean') {
-            return payload.hasMore;
+        if ('hasMore' in payload) {
+            return payload.hasMore === true;
         }
         return pageItemCount >= pageSize;
     }
@@ -265,13 +270,6 @@ export class JourneysService {
 
         let current: unknown = obj;
         for (const part of path.split('.')) {
-            if (Array.isArray(current)) {
-                const index = parseInt(part, 10);
-                if (Number.isNaN(index) || index < 0 || index >= current.length) return null;
-                current = current[index];
-                continue;
-            }
-
             if (!isRecord(current)) return null;
             current = current[part];
 

@@ -182,5 +182,34 @@ describe('JourneysService', () => {
                 de_id: '',
             });
         });
+
+        it('falls back to event definition lookup by ID when only eventDefinitionId is present', async () => {
+            (http.get as jest.Mock)
+                .mockResolvedValueOnce({
+                    triggers: [
+                        {
+                            metaData: {
+                                eventDefinitionId: 'evt-id-123',
+                            },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    dataExtensionKey: 'ENTRY_BY_EVT_ID',
+                    dataExtensionId: '789',
+                });
+
+            const result = await svc.resolveJourneyDataExtension('journey-4');
+
+            expect(http.get).toHaveBeenNthCalledWith(2, '/interaction/v1/eventDefinitions/evt-id-123');
+            expect(result).toEqual({
+                source: 'event-definition',
+                event_definition_reference_type: 'id',
+                event_definition_reference: 'evt-id-123',
+                event_definition_key: '',
+                de_external_key: 'ENTRY_BY_EVT_ID',
+                de_id: '789',
+            });
+        });
     });
 });
