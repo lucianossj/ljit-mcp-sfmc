@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { DeService } from './de.service';
+import { DeSoapService } from './de-soap.service';
 import { toolCall } from '../mcp/tool-handler';
 
 const fieldSchema = z.object({
@@ -15,9 +16,23 @@ const fieldSchema = z.object({
   defaultValue: z.string().optional().describe('Valor padrão'),
 });
 
+const soapFieldSchema = z.object({
+  name: z.string().describe('Nome do campo'),
+  fieldType: z
+    .enum(['Text', 'Number', 'Date', 'Boolean', 'EmailAddress', 'Phone', 'Decimal', 'Locale'])
+    .describe('Tipo de dado do campo'),
+  maxLength: z.number().optional().describe('Tamanho máximo (campos Text)'),
+  isPrimaryKey: z.boolean().optional().describe('Indica se é chave primária'),
+  isRequired: z.boolean().optional().describe('Indica se é obrigatório'),
+  defaultValue: z.string().optional().describe('Valor padrão'),
+});
+
 @Injectable()
 export class DeToolsService {
-  constructor(private readonly deService: DeService) {}
+  constructor(
+    private readonly deService: DeService,
+    private readonly deSoapService: DeSoapService,
+  ) {}
 
   register(server: McpServer): void {
     server.tool(
@@ -100,6 +115,70 @@ export class DeToolsService {
           ...(sendableFieldName && { sendableDataExtensionField: { name: sendableFieldName } }),
           ...(subscriberFieldName && { sendableSubscriberField: { name: subscriberFieldName } }),
         }),
+      ),
+    );
+
+    server.tool(
+      'de_create_schema',
+      'Cria uma nova Data Extension no SFMC via SOAP API com schema completo. Recomendado para DEs sendable, campos do tipo EmailAddress, ou quando a REST API não suportar o schema desejado.',
+      {
+        name: z.string().describe('Nome da Data Extension'),
+        customerKey: z.string().describe('Chave externa (CustomerKey) da Data Extension'),
+        description: z.string().optional().describe('Descrição da Data Extension'),
+        isSendable: z.boolean().optional().describe('Indica se a DE é enviável'),
+        sendableDataExtensionField: z
+          .object({ name: z.string().describe('Nome do campo da DE usado para envio') })
+          .optional()
+          .describe('Campo da DE mapeado para envio (obrigatório se isSendable for true)'),
+        sendableSubscriberField: z
+          .object({ name: z.string().describe('Nome do campo de subscriber (ex: "Email Address")') })
+          .optional()
+          .describe('Campo de subscriber para mapear'),
+        categoryId: z.number().optional().describe('ID da pasta onde a DE será criada'),
+        fields: z.array(soapFieldSchema).describe('Lista de campos do schema da Data Extension'),
+      },
+      toolCall(({ name, customerKey, description, isSendable, sendableDataExtensionField, sendableSubscriberField, categoryId, fields }) =>
+        this.deSoapService.createDataExtension({
+          name,
+          customerKey,
+          fields,
+          ...(description && { description }),
+          ...(isSendable !== undefined && { isSendable }),
+          ...(sendableDataExtensionField && { sendableDataExtensionField }),
+          ...(sendableSubscriberField && { sendableSubscriberField }),
+          ...(categoryId !== undefined && { categoryId }),
+        }),
+      ),
+    );
+
+    server.tool(
+      'de_update_schema',
+      'Atualiza metadados e/ou campos de uma Data Extension existente no SFMC via SOAP API.',
+      {
+        customerKey: z.string().describe('Chave externa (CustomerKey) da Data Extension a atualizar'),
+        name: z.string().optional().describe('Novo nome da Data Extension'),
+        description: z.string().optional().describe('Nova descrição'),
+        isSendable: z.boolean().optional().describe('Altera se a DE é enviável'),
+        fields: z.array(soapFieldSchema).optional().describe('Campos a adicionar ou atualizar'),
+      },
+      toolCall(({ customerKey, name, description, isSendable, fields }) =>
+        this.deSoapService.updateDataExtension(customerKey, {
+          ...(name && { name }),
+          ...(description && { description }),
+          ...(isSendable !== undefined && { isSendable }),
+          ...(fields && { fields }),
+        }),
+      ),
+    );
+
+    server.tool(
+      'de_delete_schema',
+      'Remove uma Data Extension do SFMC via SOAP API pelo CustomerKey.',
+      {
+        customerKey: z.string().describe('Chave externa (CustomerKey) da Data Extension a remover'),
+      },
+      toolCall(({ customerKey }) =>
+        this.deSoapService.deleteDataExtension(customerKey),
       ),
     );
   }

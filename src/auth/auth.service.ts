@@ -13,6 +13,7 @@ interface TokenResponse {
 interface CachedToken {
   accessToken: string;
   restBaseUrl: string;
+  soapBaseUrl: string;
   expiresAt: number;
 }
 
@@ -46,13 +47,14 @@ export class AuthService {
     return `https://${this.subdomain}.auth.marketingcloudapis.com/v2/token`;
   }
 
-  async getAccessToken(): Promise<{ accessToken: string; restBaseUrl: string }> {
+  async getAccessToken(): Promise<{ accessToken: string; restBaseUrl: string; soapBaseUrl: string }> {
     const now = Date.now();
     // Refresh 60 seconds before expiry
     if (this.cachedToken && this.cachedToken.expiresAt > now + 60_000) {
       return {
         accessToken: this.cachedToken.accessToken,
         restBaseUrl: this.cachedToken.restBaseUrl,
+        soapBaseUrl: this.cachedToken.soapBaseUrl,
       };
     }
 
@@ -71,17 +73,19 @@ export class AuthService {
       timeout: AUTH_TIMEOUT_MS,
     });
 
-    const { access_token, expires_in, rest_instance_url } = response.data;
+    const { access_token, expires_in, rest_instance_url, soap_instance_url } = response.data;
 
     this.cachedToken = {
       accessToken: access_token,
       restBaseUrl: rest_instance_url.replace(/\/$/, ''),
+      soapBaseUrl: soap_instance_url.replace(/\/$/, ''),
       expiresAt: now + expires_in * 1000,
     };
 
     return {
       accessToken: this.cachedToken.accessToken,
       restBaseUrl: this.cachedToken.restBaseUrl,
+      soapBaseUrl: this.cachedToken.soapBaseUrl,
     };
   }
 }
