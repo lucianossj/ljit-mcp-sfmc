@@ -44,7 +44,7 @@ export class DeSoapService {
    */
   async createDataExtensionFolder({ name, parentId, description }: { name: string; parentId?: number; description?: string }): Promise<any> {
     const bodyXml = `<CreateRequest xmlns=\"http://exacttarget.com/wsdl/partnerAPI\">
-      <Objects xsi:type=\"Folder\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">
+      <Objects xsi:type=\"Folder\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns=\"http://exacttarget.com/wsdl/partnerAPI\">
         <Name>${escapeXml(name)}</Name>
         <ContentType>dataextension</ContentType>
         <IsEditable>true</IsEditable>
