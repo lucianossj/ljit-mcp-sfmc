@@ -77,6 +77,15 @@ export class DeToolsService {
     );
 
     server.tool(
+      'de_list_folders_soap',
+      'Lista pastas de Data Extension via SOAP. Retorna pastas com ContentType = "dataextension".',
+      {
+        parentId: z.number().optional().describe('Filtrar por pasta pai (opcional)'),
+      },
+      toolCall(({ parentId }) => this.deSoapService.listDataExtensionFolders(parentId)),
+    );
+
+    server.tool(
       'de_get_info',
       'Obtém metadados e informações de schema de uma Data Extension do SFMC.',
       {

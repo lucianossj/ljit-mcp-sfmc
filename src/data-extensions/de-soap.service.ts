@@ -38,6 +38,39 @@ const RESPONSE_KEYS = ['CreateResponse', 'UpdateResponse', 'DeleteResponse'] as 
 export class DeSoapService {
   constructor(private readonly soap: SfmcSoapService) {}
 
+  /**
+   * Lista pastas de Data Extension via SOAP (ContentType = "dataextension").
+   * @param parentId Opcional: filtra por pasta pai
+   */
+  async listDataExtensionFolders(parentId?: number): Promise<any[]> {
+    const filter = parentId
+      ? `<Filter xsi:type="SimpleFilterPart">
+           <Property>ParentFolder.ID</Property>
+           <SimpleOperator>equals</SimpleOperator>
+           <Value>${parentId}</Value>
+         </Filter>`
+      : `<Filter xsi:type="SimpleFilterPart">
+           <Property>ContentType</Property>
+           <SimpleOperator>equals</SimpleOperator>
+           <Value>dataextension</Value>
+         </Filter>`;
+
+    const bodyXml = `<RetrieveRequestMsg xmlns="http://exacttarget.com/wsdl/partnerAPI">
+      <RetrieveRequest>
+        <ObjectType>Folder</ObjectType>
+        <Properties>ID</Properties>
+        <Properties>Name</Properties>
+        <Properties>ContentType</Properties>
+        <Properties>ParentFolder.ID</Properties>
+        <Properties>Description</Properties>
+        ${filter}
+      </RetrieveRequest>
+    </RetrieveRequestMsg>`;
+
+    const response = await this.soap.soapRequest('Retrieve', bodyXml);
+    return (response?.Results as any[]) ?? [];
+  }
+
   async createDataExtension(body: DeSoapCreateBody): Promise<unknown> {
     const xml = this.buildCreateXml(body);
     const response = await this.soap.soapRequest('Create', xml);
