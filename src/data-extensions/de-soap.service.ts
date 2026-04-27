@@ -36,6 +36,27 @@ const RESPONSE_KEYS = ['CreateResponse', 'UpdateResponse', 'DeleteResponse'] as 
 
 @Injectable()
 export class DeSoapService {
+  /**
+   * Cria uma pasta de Data Extension via SOAP.
+   * @param name Nome da pasta
+   * @param parentId ID da pasta pai (opcional)
+   * @param description Descrição (opcional)
+   */
+  async createDataExtensionFolder({ name, parentId, description }: { name: string; parentId?: number; description?: string }): Promise<any> {
+    const bodyXml = `<CreateRequest xmlns=\"http://exacttarget.com/wsdl/partnerAPI\">
+      <Objects xsi:type=\"Folder\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">
+        <Name>${escapeXml(name)}</Name>
+        <ContentType>dataextension</ContentType>
+        <IsEditable>true</IsEditable>
+        <AllowChildren>true</AllowChildren>
+        ${parentId !== undefined ? `<ParentFolder><ID>${parentId}</ID></ParentFolder>` : ''}
+        ${description ? `<Description>${escapeXml(description)}</Description>` : ''}
+      </Objects>
+    </CreateRequest>`;
+    const response = await this.soap.soapRequest('Create', bodyXml);
+    return response;
+  }
+
   constructor(private readonly soap: SfmcSoapService) {}
 
   /**

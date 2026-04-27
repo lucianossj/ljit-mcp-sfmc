@@ -86,6 +86,17 @@ export class DeToolsService {
     );
 
     server.tool(
+      'de_create_folder_soap',
+      'Cria uma nova pasta de Data Extension via SOAP. ContentType fixo = "dataextension".',
+      {
+        name: z.string().describe('Nome da pasta'),
+        parentId: z.number().optional().describe('ID da pasta pai (opcional)'),
+        description: z.string().optional().describe('Descrição da pasta (opcional)'),
+      },
+      toolCall(({ name, parentId, description }) => this.deSoapService.createDataExtensionFolder({ name, parentId, description })),
+    );
+
+    server.tool(
       'de_get_info',
       'Obtém metadados e informações de schema de uma Data Extension do SFMC.',
       {
