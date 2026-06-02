@@ -61,17 +61,22 @@ export interface SmsDefinitionBody {
   };
 }
 
+type PushContent =
+  | { customerKey: string }
+  | {
+      title: string;
+      message: string;
+      customKeys?: Record<string, string>;
+      media?: { url: string; altText?: string };
+    };
+
 export interface PushDefinitionBody {
   definitionKey: string;
   name: string;
   description?: string;
   status?: 'Active' | 'Inactive';
-  content: {
-    title: string;
-    message: string;
-    customKeys?: Record<string, string>;
-    media?: { url: string; altText?: string };
-  };
+  applicationId: string;
+  content: PushContent;
   subscriptions?: { dataExtension?: string };
 }
 

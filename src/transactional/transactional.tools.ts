@@ -122,36 +122,48 @@ export class TransactionalToolsService {
 
     server.tool(
       'txn_create_push_definition',
-      'Cria uma nova definição de Push Notification Transacional no SFMC.',
+      'Cria uma nova definição de Push Notification Transacional no SFMC. O conteúdo pode ser definido via customerKey (asset existente) ou inline (title+message).',
       {
         definitionKey: z.string().describe('Chave única para a definição'),
         name: z.string().describe('Nome legível da definição'),
         description: z.string().optional(),
-        title: z.string().describe('Título da notificação push'),
-        message: z.string().describe('Corpo da mensagem da notificação push'),
+        applicationId: z.string().describe('ID do aplicativo mobile registrado no MobilePush do SFMC'),
+        status: z.enum(['Active', 'Inactive']).optional().default('Active'),
+        customerKey: z
+          .string()
+          .optional()
+          .describe('Chave do asset de conteúdo push (use isto OU title+message)'),
+        title: z.string().optional().describe('Título inline da notificação (use isto OU customerKey)'),
+        message: z.string().optional().describe('Corpo inline da notificação (use isto OU customerKey)'),
         customKeys: z
           .record(z.string())
           .optional()
-          .describe('Pares chave-valor customizados para o payload push'),
-        mediaUrl: z.string().optional().describe('URL de mídia a anexar (rich push)'),
+          .describe('Pares chave-valor customizados para o payload push (modo inline)'),
+        mediaUrl: z.string().optional().describe('URL de mídia a anexar (rich push, modo inline)'),
         dataExtension: z.string().optional().describe('Chave externa da Data Extension'),
-        status: z.enum(['Active', 'Inactive']).optional().default('Active'),
       },
-      toolCall(({ definitionKey, name, description, title, message, customKeys, mediaUrl, dataExtension, status }) =>
-        this.svc.createPushDefinition({
+      toolCall(({ definitionKey, name, description, applicationId, customerKey, title, message, customKeys, mediaUrl, dataExtension, status }) => {
+        if (!customerKey && (!title || !message)) {
+          throw new Error('Forneça customerKey OU title+message para definir o conteúdo push.');
+        }
+        const content = customerKey
+          ? { customerKey }
+          : {
+              title: title!,
+              message: message!,
+              ...(customKeys && { customKeys }),
+              ...(mediaUrl && { media: { url: mediaUrl } }),
+            };
+        return this.svc.createPushDefinition({
           definitionKey,
           name,
+          applicationId,
           status,
-          content: {
-            title,
-            message,
-            ...(customKeys && { customKeys }),
-            ...(mediaUrl && { media: { url: mediaUrl } }),
-          },
+          content,
           ...(description && { description }),
           ...(dataExtension && { subscriptions: { dataExtension } }),
-        }),
-      ),
+        });
+      }),
     );
 
     // ─── Update / Delete ─────────────────────────────────────────────────────
