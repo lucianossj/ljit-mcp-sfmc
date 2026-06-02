@@ -62,13 +62,16 @@ export class TransactionalToolsService {
         name: z.string().describe('Nome legível da definição'),
         description: z.string().optional(),
         customerKey: z.string().describe('Customer key do asset de e-mail no Content Builder'),
+        classification: z.string().optional().describe('Customer key da Send Classification'),
         dataExtension: z.string().optional().describe('Chave externa da Data Extension para dados do subscriber'),
+        list: z.string().optional().describe('Nome da lista de assinantes (ex: "All Subscribers")'),
         fromEmail: z.string().optional().describe('Endereço de e-mail do remetente'),
         fromName: z.string().optional().describe('Nome de exibição do remetente'),
         subject: z.string().optional().describe('Assunto do e-mail'),
         status: z.enum(['Active', 'Inactive']).optional().default('Active'),
+        createJourney: z.boolean().optional().describe('Cria Journey automaticamente para a definition'),
       },
-      toolCall(({ definitionKey, name, description, customerKey, dataExtension, fromEmail, fromName, subject, status }) =>
+      toolCall(({ definitionKey, name, description, customerKey, classification, dataExtension, list, fromEmail, fromName, subject, status, createJourney }) =>
         this.svc.createEmailDefinition({
           definitionKey,
           name,
@@ -76,13 +79,16 @@ export class TransactionalToolsService {
           content: { customerKey },
           subscriptions: {
             ...(dataExtension && { dataExtension }),
+            ...(list && { list }),
             autoAddSubscriber: true,
             updateSubscriber: true,
           },
           ...(description && { description }),
+          ...(classification && { classification }),
           ...(fromEmail && { fromEmail }),
           ...(fromName && { fromName }),
           ...(subject && { subject }),
+          ...(createJourney !== undefined && { options: { createJourney } }),
         }),
       ),
     );

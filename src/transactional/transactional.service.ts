@@ -39,7 +39,9 @@ export interface EmailDefinitionBody {
     trackLinks?: boolean;
     cc?: string[];
     bcc?: string[];
+    createJourney?: boolean;
   };
+  classification?: string;
   fromEmail?: string;
   fromName?: string;
   subject?: string;
