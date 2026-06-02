@@ -100,9 +100,16 @@ export class TransactionalToolsService {
         keyword: z.string().optional().describe('Palavra-chave associada ao short code'),
         dataExtension: z.string().optional().describe('Chave externa da Data Extension'),
         status: z.enum(['Active', 'Inactive']).optional().default('Active'),
+        isLinkShorteningEnabled: z.boolean().optional().describe('Habilita encurtamento de URLs na mensagem'),
+        isSubscriberTrackingEnabled: z.boolean().optional().describe('Habilita rastreamento de cliques por assinante'),
+        urlShortenerType: z.string().optional().describe('Tipo de encurtador de URL (ex: "SFMC")'),
       },
-      toolCall(({ definitionKey, name, description, message, shortCode, countryCode, keyword, dataExtension, status }) =>
-        this.svc.createSmsDefinition({
+      toolCall(({ definitionKey, name, description, message, shortCode, countryCode, keyword, dataExtension, status, isLinkShorteningEnabled, isSubscriberTrackingEnabled, urlShortenerType }) => {
+        const hasUrlShortenerOption =
+          isLinkShorteningEnabled !== undefined ||
+          isSubscriberTrackingEnabled !== undefined ||
+          !!urlShortenerType;
+        return this.svc.createSmsDefinition({
           definitionKey,
           name,
           status,
@@ -116,8 +123,17 @@ export class TransactionalToolsService {
             updateSubscriber: true,
           },
           ...(description && { description }),
-        }),
-      ),
+          ...(hasUrlShortenerOption && {
+            options: {
+              urlShortenerOptions: {
+                ...(isLinkShorteningEnabled !== undefined && { isLinkShorteningEnabled }),
+                ...(isSubscriberTrackingEnabled !== undefined && { isSubscriberTrackingEnabled }),
+                ...(urlShortenerType && { shortenerType: urlShortenerType }),
+              },
+            },
+          }),
+        });
+      }),
     );
 
     server.tool(

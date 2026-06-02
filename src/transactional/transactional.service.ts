@@ -59,6 +59,13 @@ export interface SmsDefinitionBody {
     autoAddSubscriber?: boolean;
     updateSubscriber?: boolean;
   };
+  options?: {
+    urlShortenerOptions?: {
+      isLinkShorteningEnabled?: boolean;
+      isSubscriberTrackingEnabled?: boolean;
+      shortenerType?: string;
+    };
+  };
 }
 
 type PushContent =
