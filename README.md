@@ -40,7 +40,7 @@ Cliente MCP (Claude, Cursor…)
 
 | Ferramenta | O que faz |
 |---|---|
-| `de_list` | Lista Data Extensions pelo nome (prefixo/trecho); suporta paginação |
+| `de_list` | Lista Data Extensions via SOAP. Filtros opcionais: `nameFilter` (contains, case-insensitive) e `categoryId` (pasta — combine com `de_list_folders_soap` para listar todas as DEs de um diretório). Sem filtro, lista todas |
 | `de_list_rows` | Recupera linhas de uma DE com paginação e filtros OData |
 | `de_upsert_rows` | Insere ou atualiza linhas (upsert por chave primária) |
 | `de_get_info` | Retorna metadados e schema completo de uma DE |

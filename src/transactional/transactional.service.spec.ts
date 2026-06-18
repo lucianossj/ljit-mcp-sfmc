@@ -34,7 +34,7 @@ describe('TransactionalService', () => {
 
   describe('listDefinitions', () => {
     it.each(['email', 'sms', 'push'] as const)(
-      'calls correct endpoint for %s channel with default pagination',
+      'paginates %s with $page/$pageSize (the API ignores the un-prefixed params)',
       async (channel) => {
         (http.get as jest.Mock).mockResolvedValue({ definitions: [], count: 0 });
 
@@ -42,31 +42,70 @@ describe('TransactionalService', () => {
 
         expect(http.get).toHaveBeenCalledWith(
           `/messaging/v1/${channel}/definitions`,
-          { page: 1, pageSize: 50 },
+          { $page: 1, $pageSize: 50 },
         );
       },
     );
 
-    it('includes status filter when provided', async () => {
+    it('passes custom page and caps pageSize at 50', async () => {
       (http.get as jest.Mock).mockResolvedValue({ definitions: [], count: 0 });
 
-      await svc.listDefinitions('email', { status: 'Active' });
-
-      expect(http.get).toHaveBeenCalledWith(
-        '/messaging/v1/email/definitions',
-        expect.objectContaining({ status: 'Active' }),
-      );
-    });
-
-    it('passes custom page and pageSize', async () => {
-      (http.get as jest.Mock).mockResolvedValue({ definitions: [], count: 0 });
-
-      await svc.listDefinitions('sms', { page: 2, pageSize: 10 });
+      await svc.listDefinitions('sms', { page: 2, pageSize: 200 });
 
       expect(http.get).toHaveBeenCalledWith(
         '/messaging/v1/sms/definitions',
-        expect.objectContaining({ page: 2, pageSize: 10 }),
+        { $page: 2, $pageSize: 50 },
       );
+    });
+
+    it('excludes Deleted definitions by default and keeps them with includeDeleted', async () => {
+      const payload = {
+        definitions: [
+          { name: 'a', definitionKey: 'a', status: 'Active' },
+          { name: 'b', definitionKey: 'b', status: 'Deleted' },
+        ],
+        count: 2,
+        page: 1,
+      };
+      (http.get as jest.Mock).mockResolvedValue(payload);
+      const noDeleted = await svc.listDefinitions('email');
+      expect(noDeleted.definitions.map((d) => d['definitionKey'])).toEqual(['a']);
+
+      (http.get as jest.Mock).mockResolvedValue(payload);
+      const withDeleted = await svc.listDefinitions('email', { includeDeleted: true });
+      expect(withDeleted.definitions).toHaveLength(2);
+    });
+
+    it('applies status filter client-side (querystring filter is ignored by the API)', async () => {
+      (http.get as jest.Mock).mockResolvedValue({
+        definitions: [
+          { name: 'a', definitionKey: 'a', status: 'Active' },
+          { name: 'b', definitionKey: 'b', status: 'New' },
+        ],
+        count: 2,
+        page: 1,
+      });
+
+      const result = await svc.listDefinitions('email', { status: 'Active' });
+
+      expect(http.get).toHaveBeenCalledWith('/messaging/v1/email/definitions', { $page: 1, $pageSize: 50 });
+      expect(result.definitions.map((d) => d['definitionKey'])).toEqual(['a']);
+    });
+
+    it('nameFilter is a contains match over name AND definitionKey', async () => {
+      (http.get as jest.Mock).mockResolvedValue({
+        definitions: [
+          { name: 'CMP_EMM_alo', definitionKey: 'k1', status: 'Active' },
+          { name: 'other', definitionKey: 'CMP_EMM_x', status: 'Active' },
+          { name: 'unrelated', definitionKey: 'k3', status: 'Active' },
+        ],
+        count: 3,
+        page: 1,
+      });
+
+      const result = await svc.listDefinitions('email', { nameFilter: 'emm' });
+
+      expect(result.definitions.map((d) => d['definitionKey'])).toEqual(['k1', 'CMP_EMM_x']);
     });
   });
 

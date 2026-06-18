@@ -86,6 +86,66 @@ export class DeSoapService {
     }));
   }
 
+  /**
+   * Lista Data Extensions via SOAP (Retrieve). Suporta filtros opcionais e
+   * agnósticos: nameFilter (contains, via operador `like`) e categoryId (pasta).
+   * Sem filtro, lista todas (paginação automática no retrieve, com teto).
+   */
+  async listDataExtensions(
+    options: { nameFilter?: string; categoryId?: number } = {},
+  ): Promise<{ count: number; truncated: boolean; items: Array<Record<string, unknown>> }> {
+    const { results, truncated } = await this.soap.retrieve(
+      'DataExtension',
+      ['Name', 'CustomerKey', 'CategoryID', 'Description', 'IsSendable', 'IsTestable'],
+      this.buildDeListFilter(options),
+    );
+
+    const items = results.map((d) => ({
+      name: d['Name'],
+      externalKey: d['CustomerKey'],
+      categoryId: d['CategoryID'] !== undefined ? Number(d['CategoryID']) : undefined,
+      description: d['Description'],
+      isSendable: this.toBool(d['IsSendable']),
+      isTestable: this.toBool(d['IsTestable']),
+    }));
+
+    return { count: items.length, truncated, items };
+  }
+
+  private toBool(v: unknown): boolean | undefined {
+    if (v === undefined || v === null || v === '') return undefined;
+    return String(v).toLowerCase() === 'true';
+  }
+
+  private simpleFilter(property: string, op: string, value: string): string {
+    return `<Property>${property}</Property><SimpleOperator>${op}</SimpleOperator><Value>${value}</Value>`;
+  }
+
+  /** Monta o filtro SOAP: combina categoryId (equals) e nameFilter (like) com AND quando ambos. */
+  private buildDeListFilter(options: { nameFilter?: string; categoryId?: number }): string {
+    const conds: Array<{ p: string; op: string; v: string }> = [];
+    if (options.categoryId !== undefined) {
+      conds.push({ p: 'CategoryID', op: 'equals', v: String(options.categoryId) });
+    }
+    if (options.nameFilter) {
+      conds.push({ p: 'Name', op: 'like', v: `%${escapeXml(options.nameFilter)}%` });
+    }
+
+    if (conds.length === 0) return '';
+    if (conds.length === 1) {
+      const c = conds[0];
+      return `<Filter xsi:type="SimpleFilterPart">${this.simpleFilter(c.p, c.op, c.v)}</Filter>`;
+    }
+    const [a, b] = conds;
+    return (
+      `<Filter xsi:type="ComplexFilterPart">` +
+      `<LeftOperand xsi:type="SimpleFilterPart">${this.simpleFilter(a.p, a.op, a.v)}</LeftOperand>` +
+      `<LogicalOperator>AND</LogicalOperator>` +
+      `<RightOperand xsi:type="SimpleFilterPart">${this.simpleFilter(b.p, b.op, b.v)}</RightOperand>` +
+      `</Filter>`
+    );
+  }
+
   async createDataExtension(body: DeSoapCreateBody): Promise<unknown> {
     const xml = this.buildCreateXml(body);
     const response = await this.soap.soapRequest('Create', xml);

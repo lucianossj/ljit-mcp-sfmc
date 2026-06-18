@@ -37,14 +37,13 @@ export class DeToolsService {
   register(server: McpServer): void {
     server.tool(
       'de_list',
-      'Lista Data Extensions do SFMC. O parâmetro nameFilter é obrigatório — informe um trecho do nome para busca (ex: "DEX_" para listar todas as DEs com esse prefixo). Suporta paginação.',
+      'Lista Data Extensions do SFMC via SOAP. Filtros opcionais: nameFilter (contains, case-insensitive, em qualquer parte do nome) e categoryId (ID da pasta — use de_list_folders_soap para descobrir o ID e listar todas as DEs de um diretório). Sem filtro, lista todas (com teto de segurança). Retorna { count, truncated, items[] }.',
       {
-        page: z.number().optional().default(1).describe('Número da página (padrão: 1)'),
-        pageSize: z.number().optional().default(50).describe('Itens por página (padrão: 50, máx: 2500)'),
-        nameFilter: z.string().describe('Filtrar por prefixo/trecho do nome da DE (obrigatório)'),
+        nameFilter: z.string().optional().describe('Trecho do nome da DE (contains, case-insensitive)'),
+        categoryId: z.number().optional().describe('ID da pasta (obtido em de_list_folders_soap) para listar todas as DEs desse diretório'),
       },
-      toolCall(({ page, pageSize, nameFilter }) =>
-        this.deService.listDataExtensions({ page, pageSize, nameFilter }),
+      toolCall(({ nameFilter, categoryId }) =>
+        this.deSoapService.listDataExtensions({ nameFilter, categoryId }),
       ),
     );
 
