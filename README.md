@@ -170,7 +170,8 @@ Adicione ao seu `claude_desktop_config.json`:
 {
   "mcpServers": {
     "sfmc": {
-      "command": "ljit-mcp-sfmc",
+      "command": "npx",
+      "args": ["-y", "ljit-mcp-sfmc@latest"],
       "env": {
         "SFMC_CLIENT_ID": "seu_client_id",
         "SFMC_CLIENT_SECRET": "seu_client_secret",
@@ -182,14 +183,19 @@ Adicione ao seu `claude_desktop_config.json`:
 }
 ```
 
+> **Requer Node.js** instalado na máquina (o Claude Desktop não traz Node). O `npx -y` baixa e executa o pacote automaticamente — não precisa `npm install -g`.
+>
+> Se o Claude Desktop não encontrar o `npx` (apps gráficos podem não herdar o PATH do shell), use o caminho absoluto em `command` — descubra com `which npx` (macOS/Linux) ou `where npx` (Windows, use `npx.cmd`).
+
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add sfmc ljit-mcp-sfmc \
+claude mcp add sfmc \
   -e SFMC_CLIENT_ID=seu_client_id \
   -e SFMC_CLIENT_SECRET=seu_client_secret \
   -e SFMC_SUBDOMAIN=seu_subdomain \
-  -e SFMC_ACCOUNT_ID=123456789
+  -e SFMC_ACCOUNT_ID=123456789 \
+  -- npx -y ljit-mcp-sfmc@latest
 ```
 
 ### VS Code (GitHub Copilot)
@@ -202,7 +208,8 @@ Adicione ao seu `settings.json` (ou `.vscode/mcp.json` no workspace):
     "servers": {
       "sfmc": {
         "type": "stdio",
-        "command": "ljit-mcp-sfmc",
+        "command": "npx",
+        "args": ["-y", "ljit-mcp-sfmc@latest"],
         "env": {
           "SFMC_CLIENT_ID": "seu_client_id",
           "SFMC_CLIENT_SECRET": "seu_client_secret",
@@ -222,7 +229,8 @@ Adicione ao `.cursor/mcp.json` no diretório raiz do seu projeto:
 {
   "mcpServers": {
     "sfmc": {
-      "command": "ljit-mcp-sfmc",
+      "command": "npx",
+      "args": ["-y", "ljit-mcp-sfmc@latest"],
       "env": {
         "SFMC_CLIENT_ID": "seu_client_id",
         "SFMC_CLIENT_SECRET": "seu_client_secret",
@@ -241,7 +249,8 @@ Adicione ao `~/.codeium/windsurf/mcp_config.json`:
 {
   "mcpServers": {
     "sfmc": {
-      "command": "ljit-mcp-sfmc",
+      "command": "npx",
+      "args": ["-y", "ljit-mcp-sfmc@latest"],
       "env": {
         "SFMC_CLIENT_ID": "seu_client_id",
         "SFMC_CLIENT_SECRET": "seu_client_secret",
