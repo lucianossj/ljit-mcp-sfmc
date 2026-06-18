@@ -6,7 +6,7 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/lucianossj/ljit-mcp-sfmc/pulls)
 [![GitHub Stars](https://img.shields.io/github/stars/lucianossj/ljit-mcp-sfmc?style=social)](https://github.com/lucianossj/ljit-mcp-sfmc)
 
-MCP server para o **Salesforce Marketing Cloud (SFMC)**. Expõe **35 ferramentas** que permitem que agentes de IA (Claude, Cursor, VS Code, Windsurf, etc.) gerenciem Data Extensions, assets do Content Builder, jornadas do Journey Builder e enviem mensagens transacionais — tudo via linguagem natural, sem abrir a interface do SFMC.
+MCP server para o **Salesforce Marketing Cloud (SFMC)**. Expõe **44 ferramentas** que permitem que agentes de IA (Claude, Cursor, VS Code, Windsurf, etc.) gerenciem Data Extensions, assets do Content Builder, jornadas do Journey Builder, enviem mensagens transacionais e leiam dados do Marketing Cloud Personalization — tudo via linguagem natural, sem abrir a interface do SFMC.
 
 > 🌐 **Projeto open-source** — código disponível em [github.com/lucianossj/ljit-mcp-sfmc](https://github.com/lucianossj/ljit-mcp-sfmc). Contribuições, sugestões e Pull Requests são muito bem-vindos!
 
@@ -18,14 +18,18 @@ Este projeto implementa o protocolo [MCP (Model Context Protocol)](https://model
 
 A autenticação com o SFMC é feita via **OAuth 2.0 Client Credentials**. O token é obtido automaticamente na primeira chamada e renovado em background **60 segundos antes de expirar**, garantindo zero interrupções em sessões longas.
 
+As ferramentas de **Personalization** (`pers_*`) usam um produto separado (Marketing Cloud Personalization, ex-Interaction Studio/Evergage), com autenticação própria via **API Token (Basic auth)** e base URL própria (`*.evergage.com`) — configuradas por variáveis de ambiente distintas (`MCP_PERS_*`).
+
 ```
 Cliente MCP (Claude, Cursor…)
         │  stdio (JSON-RPC)
         ▼
   ljit-mcp-sfmc  ──── OAuth2 ────▶  SFMC Auth API
         │                            (token cache)
-        └──── REST ──────────────▶  SFMC REST APIs
-                  (DE / CB / Journeys / Txn)
+        ├──── REST ──────────────▶  SFMC REST APIs
+        │         (DE / CB / Journeys / Txn)
+        └──── Basic auth ────────▶  Personalization API
+                  (pers_*, *.evergage.com)
 ```
 
 ---
@@ -40,7 +44,12 @@ Cliente MCP (Claude, Cursor…)
 | `de_list_rows` | Recupera linhas de uma DE com paginação e filtros OData |
 | `de_upsert_rows` | Insere ou atualiza linhas (upsert por chave primária) |
 | `de_get_info` | Retorna metadados e schema completo de uma DE |
-| `de_create` | Cria uma nova DE com campos, tipos e configurações de envio |
+| `de_create` | Cria uma nova DE (REST) com campos, tipos e configurações de envio |
+| `de_create_schema` | Cria uma DE via **SOAP** com schema completo — recomendado para DEs sendable, campos `EmailAddress` ou schemas não suportados pela REST |
+| `de_update_schema` | Atualiza metadados e/ou campos de uma DE existente via SOAP |
+| `de_delete_schema` | Remove uma DE via SOAP pelo `CustomerKey` |
+| `de_list_folders_soap` | Lista pastas de Data Extension via SOAP (`ContentType = dataextension`) |
+| `de_create_folder_soap` | Cria uma pasta de Data Extension via SOAP |
 
 ### Content Builder (`cb_*`)
 
@@ -92,6 +101,7 @@ Cliente MCP (Claude, Cursor…)
 |---|---|
 | `txn_send_email` | Envia e-mail transacional para um destinatário com **pre-flight automático** integrado; se houver erros bloqueantes, o envio é abortado e o relatório é retornado. `messageKey` é gerado automaticamente se omitido. Use `skipPreflight=true` para envios em produção já validados |
 | `txn_send_email_and_check` | Envia e-mail e aguarda o status de entrega final via polling automático (~8s). Executa o mesmo pre-flight do `txn_send_email`. Ideal para testes e validação de fluxo completo |
+| `txn_send_test_email` | Fluxo confiável para **e-mail de teste**: pre-flight completo + envio + polling do status real (~10s); retorna `success=true` apenas se o SFMC confirmar a entrega (`EmailSent`) |
 | `txn_send_email_batch` | Envia e-mails para até 50 destinatários em uma única chamada de API |
 | `txn_send_sms` | Envia SMS transacional para um destinatário (formato E.164) |
 | `txn_send_sms_batch` | Envia SMS para até 50 destinatários em uma única chamada |
@@ -121,6 +131,7 @@ Integração com o **Marketing Cloud Personalization** (ex-Interaction Studio / 
   - Content Builder: leitura e escrita
   - Journey Builder / Interactions: leitura
   - Transactional Messaging: leitura, escrita e envio
+- (Opcional, apenas para `pers_*`) Um **API Token** no Marketing Cloud Personalization (Security > API Tokens) com as permissões "Can access API" / "Can send events" e, para `pers_audit_log`, "Can access Audit logs"
 
 ---
 
@@ -176,13 +187,21 @@ Adicione ao seu `claude_desktop_config.json`:
         "SFMC_CLIENT_ID": "seu_client_id",
         "SFMC_CLIENT_SECRET": "seu_client_secret",
         "SFMC_SUBDOMAIN": "seu_subdomain",
-        "SFMC_ACCOUNT_ID": "123456789"
+        "SFMC_ACCOUNT_ID": "123456789",
+
+        "MCP_PERS_ACCOUNT": "seu_account",
+        "MCP_PERS_INSTANCE": "us-5",
+        "MCP_PERS_DATASET": "seu_dataset",
+        "MCP_PERS_API_KEY_ID": "sua_api_key_id",
+        "MCP_PERS_API_SECRET": "seu_api_secret"
       }
     }
   }
 }
 ```
 
+> As variáveis `MCP_PERS_*` são **opcionais** — inclua-as apenas se for usar as ferramentas de Personalization (`pers_*`). Sem elas, as demais 40 ferramentas funcionam normalmente. O mesmo bloco de `env` vale para os outros clientes abaixo.
+>
 > **Requer Node.js** instalado na máquina (o Claude Desktop não traz Node). O `npx -y` baixa e executa o pacote automaticamente — não precisa `npm install -g`.
 >
 > Se o Claude Desktop não encontrar o `npx` (apps gráficos podem não herdar o PATH do shell), use o caminho absoluto em `command` — descubra com `which npx` (macOS/Linux) ou `where npx` (Windows, use `npx.cmd`).
@@ -341,14 +360,16 @@ src/
   main.ts                  — bootstrap (NestJS ApplicationContext → McpService.start())
   app.module.ts            — módulo raiz
   auth/                    — OAuth2 Client Credentials com cache de token em memória
-  sfmc/                    — SfmcHttpService: wrapper axios que injeta o Bearer token
+  sfmc/                    — SfmcHttpService (REST) + SfmcSoapService (SOAP); injetam o Bearer token
   sfmc/sfmc-api.error.ts   — SfmcApiError + parseSfmcError
   mcp/mcp.service.ts       — registra todos os tool-services no McpServer e inicia o transporte
   mcp/tool-handler.ts      — wrapper toolCall() usado por todos os handlers
-  data-extensions/         — de.service.ts + de.tools.ts
+  data-extensions/         — de.service.ts + de-soap.service.ts + de.tools.ts
   content-builder/         — cb.service.ts + cb.tools.ts
   journeys/                — journeys.service.ts + journeys.tools.ts
   transactional/           — transactional.service.ts + transactional.tools.ts + ampscript-parser.ts
+  personalization/         — MC Personalization (produto separado): pers-auth/pers-http (Basic auth,
+                             *.evergage.com), pers-api.error.ts, personalization.service/tools.ts
 ```
 
 ### Adicionando um novo domínio
@@ -396,7 +417,7 @@ Contribuições são bem-vindas e encorajadas — desde correções de bugs até
 | Schemas Zod | Definidos inline em `<domain>.tools.ts` — não compartilhar entre domínios |
 | Build | Nunca usar `tsc` — apenas `npm run build` (SWC) |
 | Commits | Inglês, estilo [Conventional Commits](https://www.conventionalcommits.org): `feat:`, `fix:`, `docs:`, `refactor:`, `test:` |
-| Erros de API | Usar `SfmcApiError` + `parseSfmcError` de `src/sfmc/sfmc-api.error.ts` |
+| Erros de API | Usar `SfmcApiError` + `parseSfmcError` (`src/sfmc/sfmc-api.error.ts`); no domínio Personalization, `PersApiError` + `parsePersError` (`src/personalization/pers-api.error.ts`) |
 
 ### Ideias de contribuição
 
