@@ -1,4 +1,5 @@
 import { SfmcApiError } from '../sfmc/sfmc-api.error';
+import { PersApiError } from '../personalization/pers-api.error';
 
 type McpContent = { type: 'text'; text: string };
 type McpToolResult = { content: McpContent[]; isError?: boolean };
@@ -37,6 +38,14 @@ export function toolCall<T>(
 function formatError(err: unknown): string {
   if (err instanceof SfmcApiError) {
     const lines = [`SFMC API Error: ${err.message}`];
+    if (err.details) {
+      lines.push(`Details: ${JSON.stringify(err.details, null, 2)}`);
+    }
+    return lines.join('\n');
+  }
+
+  if (err instanceof PersApiError) {
+    const lines = [`Personalization API Error: ${err.message}`];
     if (err.details) {
       lines.push(`Details: ${JSON.stringify(err.details, null, 2)}`);
     }

@@ -5,6 +5,7 @@ import { DeToolsService } from '../data-extensions/de.tools';
 import { CbToolsService } from '../content-builder/cb.tools';
 import { TransactionalToolsService } from '../transactional/transactional.tools';
 import { JourneysToolsService } from '../journeys/journeys.tools';
+import { PersonalizationToolsService } from '../personalization/personalization.tools';
 
 @Injectable()
 export class McpService {
@@ -15,6 +16,7 @@ export class McpService {
     private readonly cbTools: CbToolsService,
     private readonly transactionalTools: TransactionalToolsService,
     private readonly journeysTools: JourneysToolsService,
+    private readonly personalizationTools: PersonalizationToolsService,
   ) {
     this.server = new McpServer({
       name: 'mcp-sfmc',
@@ -27,6 +29,7 @@ export class McpService {
     this.cbTools.register(this.server);
     this.transactionalTools.register(this.server);
     this.journeysTools.register(this.server);
+    this.personalizationTools.register(this.server);
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);

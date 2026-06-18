@@ -41,7 +41,16 @@ src/
   data-extensions/         — de.service.ts (REST calls) + de.tools.ts (MCP tool registration)
   content-builder/         — cb.service.ts + cb.tools.ts
   transactional/           — transactional.service.ts + transactional.tools.ts
+  personalization/         — MC Personalization (ex-Interaction Studio/Evergage): SEPARATE product.
+                             pers-auth.service.ts (Basic auth, static token), pers-http.service.ts
+                             (own baseUrl `<account>.<instance>.evergage.com`), pers-api.error.ts
 ```
+
+> **Personalization is not SFMC core.** Different auth (`Authorization: Basic base64(keyId:secret)`,
+> no OAuth/refresh) and different base URL (`.evergage.com`). It does NOT use `SfmcHttpService` —
+> inject `PersHttpService` instead. Control-plane objects (campaigns, templates, Einstein
+> recipes/decisions, segment definitions, dataset structure) have NO public CRUD API; only the data
+> plane (events, recommendations, exports, GDPR look-up/delete, audit log) is reachable.
 
 ### Adding a new domain / tool
 
@@ -69,3 +78,10 @@ Required at runtime (see `.env.example`):
 - `SFMC_CLIENT_SECRET`
 - `SFMC_SUBDOMAIN` — the subdomain prefix from `https://<SUBDOMAIN>.auth.marketingcloudapis.com`
 - `SFMC_ACCOUNT_ID` — optional, targets a child Business Unit MID
+
+Personalization (optional — only if the Personalization tools are used):
+- `MCP_PERS_ACCOUNT` + `MCP_PERS_INSTANCE` — build base URL `https://<account>.<instance>.evergage.com`
+- `MCP_PERS_BASE_URL` — optional full base URL override (consolidated domains); takes precedence over account/instance
+- `MCP_PERS_DATASET` — default dataset for operations
+- `MCP_PERS_API_KEY_ID` + `MCP_PERS_API_SECRET` — API Token credentials (Security > API Tokens), encoded as Basic auth
+- `MCP_PERS_REQUEST_TIMEOUT_MS` — optional, default 30000
