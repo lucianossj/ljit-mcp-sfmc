@@ -25,18 +25,21 @@ export class TransactionalToolsService {
 
     server.tool(
       'txn_list_definitions',
-      'Lista definições de Transactional Messaging para um canal específico (email, sms ou push). ' +
-      'Ao usar fetchAll=true, resultados de todas as BUs são retornados e deduplicados por definitionKey.',
+      'Lista definições de Transactional Messaging de um canal (email, sms ou push). ' +
+      'Por padrão exclui definitions com status "Deleted". Use fetchAll=true para varrer todas as páginas ' +
+      '(deduplicadas por definitionKey) — recomendado quando há muitas definitions. ' +
+      'O filtro de nome é "contains" case-insensitive e procura tanto no name quanto no definitionKey.',
       {
         channel: z.enum(['email', 'sms', 'push']).describe('Canal de envio'),
-        page: z.number().optional().default(1),
-        pageSize: z.number().optional().default(50),
-        status: z.enum(['Active', 'Inactive']).optional().describe('Filtrar por status'),
-        nameFilter: z.string().optional().describe('Filtrar por prefixo do nome da definição (ex: "CMP_EMM")'),
-        fetchAll: z.boolean().optional().default(false).describe('Varrer todas as páginas automaticamente e retornar resultados consolidados e deduplicados por definitionKey'),
+        page: z.number().optional().default(1).describe('Página (1-indexed); ignorado quando fetchAll=true'),
+        pageSize: z.number().optional().default(50).describe('Itens por página (máx: 50)'),
+        status: z.enum(['Active', 'Inactive', 'New']).optional().describe('Filtra por status (client-side; a API ignora o filtro via querystring)'),
+        nameFilter: z.string().optional().describe('Trecho a procurar no name ou no definitionKey (contains, case-insensitive)'),
+        includeDeleted: z.boolean().optional().default(false).describe('Quando true, inclui também definitions com status "Deleted"'),
+        fetchAll: z.boolean().optional().default(false).describe('Varre todas as páginas automaticamente e consolida (deduplicado por definitionKey)'),
       },
-      toolCall(({ channel, page, pageSize, status, nameFilter, fetchAll }) =>
-        this.svc.listDefinitions(channel, { page, pageSize, status, nameFilter, fetchAll }),
+      toolCall(({ channel, page, pageSize, status, nameFilter, includeDeleted, fetchAll }) =>
+        this.svc.listDefinitions(channel, { page, pageSize, status, nameFilter, includeDeleted, fetchAll }),
       ),
     );
 

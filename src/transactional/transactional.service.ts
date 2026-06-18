@@ -15,12 +15,17 @@ import { enrichWithStatusDescription } from './transactional-error-codes';
 
 export type Channel = 'email' | 'sms' | 'push';
 
+/** Teto de pageSize aceito pelo endpoint de definitions (~50). Acima disso a API erra. */
+const DEF_MAX_PAGE_SIZE = 50;
+
 export interface DefinitionListResponse {
   requestId?: string;
   definitions: Array<Record<string, unknown>>;
   count: number;
   page: number;
   pageSize: number;
+  /** true quando fetchAll atingiu o teto de páginas e o resultado pode estar incompleto. */
+  truncated?: boolean;
 }
 
 export interface EmailDefinitionBody {
@@ -140,100 +145,138 @@ export class TransactionalService {
 
   async listDefinitions(
     channel: Channel,
-    options: { page?: number; pageSize?: number; status?: string; nameFilter?: string; fetchAll?: boolean } = {},
+    options: {
+      page?: number;
+      pageSize?: number;
+      status?: string;
+      nameFilter?: string;
+      fetchAll?: boolean;
+      includeDeleted?: boolean;
+    } = {},
   ): Promise<DefinitionListResponse> {
-    const pageSize = options.pageSize ?? 50;
+    const pageSize = Math.min(options.pageSize ?? DEF_MAX_PAGE_SIZE, DEF_MAX_PAGE_SIZE);
 
     if (options.fetchAll) {
-      return this.listAllDefinitions(channel, { status: options.status, pageSize, nameFilter: options.nameFilter });
+      return this.listAllDefinitions(channel, {
+        status: options.status,
+        pageSize,
+        nameFilter: options.nameFilter,
+        includeDeleted: options.includeDeleted,
+      });
     }
 
-    const params: Record<string, unknown> = {
-      page: options.page ?? 1,
+    const raw = await this.fetchDefinitionsPage(channel, options.page ?? 1, pageSize);
+    let definitions = this.filterByStatus(raw.definitions ?? [], options.status, options.includeDeleted);
+    definitions = this.filterByName(definitions, options.nameFilter);
+
+    return {
+      requestId: raw.requestId,
+      definitions,
+      count: definitions.length,
+      page: raw.page ?? options.page ?? 1,
       pageSize,
     };
-    if (options.status) params.status = options.status;
+  }
 
-    const result = await this.http.get<DefinitionListResponse>(`/messaging/v1/${channel}/definitions`, params);
+  /**
+   * Busca uma página de definitions. A API de Transactional Messaging exige os
+   * parâmetros de paginação com prefixo `$` (`$page`/`$pageSize`); sem o `$` eles
+   * são silenciosamente ignorados (sempre retorna a página 1). pageSize máx ~50.
+   */
+  private fetchDefinitionsPage(
+    channel: Channel,
+    page: number,
+    pageSize: number,
+  ): Promise<DefinitionListResponse> {
+    return this.http.get<DefinitionListResponse>(`/messaging/v1/${channel}/definitions`, {
+      $page: page,
+      $pageSize: pageSize,
+    });
+  }
 
-    if (options.nameFilter) {
-      const prefix = options.nameFilter.toLowerCase();
-      result.definitions = result.definitions.filter(d =>
-        String(d['name'] ?? '').toLowerCase().startsWith(prefix),
-      );
-      result.count = result.definitions.length;
+  /**
+   * Exclui definitions com status `Deleted` (a menos que includeDeleted) e,
+   * opcionalmente, filtra por um status específico. O filtro de status da API
+   * via querystring é ignorado pelo endpoint, então é aplicado client-side.
+   */
+  private filterByStatus(
+    definitions: Array<Record<string, unknown>>,
+    status?: string,
+    includeDeleted?: boolean,
+  ): Array<Record<string, unknown>> {
+    let out = definitions;
+    if (!includeDeleted) {
+      out = out.filter((d) => String(d['status'] ?? '').toLowerCase() !== 'deleted');
     }
+    if (status) {
+      const want = status.toLowerCase();
+      out = out.filter((d) => String(d['status'] ?? '').toLowerCase() === want);
+    }
+    return out;
+  }
 
-    return result;
+  /** Filtro `contains` case-insensitive sobre name E definitionKey. */
+  private filterByName(
+    definitions: Array<Record<string, unknown>>,
+    nameFilter?: string,
+  ): Array<Record<string, unknown>> {
+    if (!nameFilter) return definitions;
+    const q = nameFilter.toLowerCase();
+    return definitions.filter(
+      (d) =>
+        String(d['name'] ?? '').toLowerCase().includes(q) ||
+        String(d['definitionKey'] ?? '').toLowerCase().includes(q),
+    );
   }
 
   private async listAllDefinitions(
     channel: Channel,
-    options: { status?: string; pageSize: number; nameFilter?: string },
+    options: { status?: string; pageSize: number; nameFilter?: string; includeDeleted?: boolean },
   ): Promise<DefinitionListResponse> {
-    const allDefinitions: Array<Record<string, unknown>> = [];
+    const MAX_PAGES = 200;
+    const all: Array<Record<string, unknown>> = [];
     let page = 1;
-    const MAX_PAGES = 100;
+    let truncated = false;
 
-    // Fetch first page to discover total count
-    const firstParams: Record<string, unknown> = { page: 1, pageSize: options.pageSize };
-    if (options.status) firstParams.status = options.status;
-
-    const firstResult = await this.http.get<DefinitionListResponse>(
-      `/messaging/v1/${channel}/definitions`,
-      firstParams,
-    );
-
-    if (firstResult.definitions.length === 0) {
-      return { definitions: [], count: 0, page: 1, pageSize: options.pageSize };
-    }
-
-    allDefinitions.push(...firstResult.definitions);
-
-    // Use count from API response to calculate total pages when available
-    const totalCount = firstResult.count ?? 0;
-    const totalPages = totalCount > 0
-      ? Math.ceil(totalCount / options.pageSize)
-      : MAX_PAGES;
-
-    page = 2;
-    while (page <= Math.min(totalPages, MAX_PAGES)) {
-      const params: Record<string, unknown> = { page, pageSize: options.pageSize };
-      if (options.status) params.status = options.status;
-
-      const result = await this.http.get<DefinitionListResponse>(
-        `/messaging/v1/${channel}/definitions`,
-        params,
-      );
-
-      if (result.definitions.length === 0) break;
-      allDefinitions.push(...result.definitions);
-      if (result.definitions.length < options.pageSize) break;
+    // `count` da API é o tamanho da página (não o total), então paginamos até
+    // uma página retornar menos itens que o pageSize.
+    while (true) {
+      const raw = await this.fetchDefinitionsPage(channel, page, options.pageSize);
+      const batch = raw.definitions ?? [];
+      all.push(...batch);
+      if (batch.length < options.pageSize) break;
+      if (page >= MAX_PAGES) {
+        truncated = true;
+        break;
+      }
       page++;
     }
 
-    if (page > MAX_PAGES) {
+    if (truncated) {
       process.stderr.write(
-        `[sfmc] fetchAll reached MAX_PAGES (${MAX_PAGES}) for ${channel} definitions — results may be incomplete\n`,
+        `[sfmc] listAllDefinitions atingiu MAX_PAGES (${MAX_PAGES}) para ${channel} — resultado pode estar incompleto\n`,
       );
     }
 
-    const definitions = options.nameFilter
-      ? allDefinitions.filter(d =>
-          String(d['name'] ?? '').toLowerCase().startsWith(options.nameFilter!.toLowerCase()),
-        )
-      : allDefinitions;
-
-    // Deduplicar por definitionKey — a API pode retornar a mesma definition de múltiplas BUs
+    // Dedup por definitionKey (mesma definition pode vir de múltiplas BUs)
     const seen = new Set<string>();
-    const deduplicated = definitions.filter((d) => {
+    let definitions = all.filter((d) => {
       const key = String(d['definitionKey'] ?? '');
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 
-    return { definitions: deduplicated, count: deduplicated.length, page: 1, pageSize: options.pageSize };
+    definitions = this.filterByStatus(definitions, options.status, options.includeDeleted);
+    definitions = this.filterByName(definitions, options.nameFilter);
+
+    return {
+      definitions,
+      count: definitions.length,
+      page: 1,
+      pageSize: options.pageSize,
+      ...(truncated ? { truncated: true } : {}),
+    };
   }
 
   async getDefinition(channel: Channel, definitionKey: string): Promise<unknown> {
