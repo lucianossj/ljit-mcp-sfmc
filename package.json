@@ -24,6 +24,7 @@
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
+    "pack:mcpb": "node scripts/pack-mcpb.mjs",
     "lint": "eslint src --ext .ts"
   },
   "jest": {

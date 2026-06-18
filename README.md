@@ -173,7 +173,18 @@ MCP_PERS_REQUEST_TIMEOUT_MS=30000        # opcional (padrão: 30000)
 
 ## Uso nos clientes MCP
 
-### Claude Desktop
+### Claude Desktop — via Desktop Extension (`.mcpb`, recomendado)
+
+Instalação em 3 cliques, **sem editar JSON e sem instalar Node** (o Claude Desktop traz o runtime):
+
+1. Baixe o arquivo **`.mcpb`** da [última release](https://github.com/lucianossj/ljit-mcp-sfmc/releases/latest)
+2. No Claude Desktop: **Settings → Extensions → Install Extension…** e selecione o arquivo
+3. Preencha as credenciais nos campos do formulário (SFMC Client ID / Secret / Subdomain). As variáveis de Personalization são opcionais.
+4. Ative a extensão — as ferramentas `sfmc` ficam disponíveis no chat.
+
+> Para gerar/atualizar o `.mcpb` localmente: `npm run pack:mcpb` (saída em `dist-mcpb/`).
+
+### Claude Desktop — via JSON
 
 Adicione ao seu `claude_desktop_config.json`:
 
@@ -349,6 +360,7 @@ npm run test:watch   # Testes em modo watch
 npm run typecheck    # Verificação de tipos (tsc --noEmit)
 npm run lint         # ESLint
 npm run build        # Compila com SWC → dist/src/
+npm run pack:mcpb    # Gera o Desktop Extension (.mcpb) em dist-mcpb/
 ```
 
 > **Importante:** nunca use `tsc` para compilar — ele estoura a memória neste projeto. Apenas `npm run build` (SWC) é suportado.

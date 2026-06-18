@@ -1,0 +1,110 @@
+{
+  "manifest_version": "0.3",
+  "name": "ljit-mcp-sfmc",
+  "display_name": "Salesforce Marketing Cloud (ljit-mcp-sfmc)",
+  "version": "0.0.0",
+  "description": "44 ferramentas para o Salesforce Marketing Cloud: Data Extensions, Content Builder, Journey Builder, Transactional Messaging e Marketing Cloud Personalization (leitura).",
+  "long_description": "MCP server para o Salesforce Marketing Cloud (SFMC). Permite que o Claude gerencie Data Extensions, assets do Content Builder, jornadas do Journey Builder, envie mensagens transacionais e leia dados do Marketing Cloud Personalization — tudo via linguagem natural. As variáveis de Personalization (MCP_PERS_*) são opcionais: preencha apenas se for usar as ferramentas pers_*.",
+  "author": {
+    "name": "Luciano da Silva Santos Junior"
+  },
+  "homepage": "https://github.com/lucianossj/ljit-mcp-sfmc",
+  "documentation": "https://github.com/lucianossj/ljit-mcp-sfmc#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lucianossj/ljit-mcp-sfmc"
+  },
+  "license": "MIT",
+  "keywords": ["salesforce", "marketing-cloud", "sfmc", "mcp", "personalization"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/src/main.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/src/main.js"],
+      "env": {
+        "SFMC_CLIENT_ID": "${user_config.sfmc_client_id}",
+        "SFMC_CLIENT_SECRET": "${user_config.sfmc_client_secret}",
+        "SFMC_SUBDOMAIN": "${user_config.sfmc_subdomain}",
+        "SFMC_ACCOUNT_ID": "${user_config.sfmc_account_id}",
+        "MCP_PERS_ACCOUNT": "${user_config.mcp_pers_account}",
+        "MCP_PERS_INSTANCE": "${user_config.mcp_pers_instance}",
+        "MCP_PERS_DATASET": "${user_config.mcp_pers_dataset}",
+        "MCP_PERS_API_KEY_ID": "${user_config.mcp_pers_api_key_id}",
+        "MCP_PERS_API_SECRET": "${user_config.mcp_pers_api_secret}"
+      }
+    }
+  },
+  "user_config": {
+    "sfmc_client_id": {
+      "type": "string",
+      "title": "SFMC Client ID",
+      "description": "Client ID da installed package (API Integration) no SFMC",
+      "required": true,
+      "sensitive": true
+    },
+    "sfmc_client_secret": {
+      "type": "string",
+      "title": "SFMC Client Secret",
+      "description": "Client Secret da installed package no SFMC",
+      "required": true,
+      "sensitive": true
+    },
+    "sfmc_subdomain": {
+      "type": "string",
+      "title": "SFMC Subdomain",
+      "description": "Prefixo da URL de auth: https://<subdomain>.auth.marketingcloudapis.com (apenas o <subdomain>)",
+      "required": true,
+      "sensitive": false
+    },
+    "sfmc_account_id": {
+      "type": "string",
+      "title": "SFMC Account ID (MID) — opcional",
+      "description": "MID de uma child Business Unit. Deixe em branco para a BU padrão.",
+      "required": false,
+      "sensitive": false
+    },
+    "mcp_pers_account": {
+      "type": "string",
+      "title": "Personalization — Account (opcional)",
+      "description": "Parte da URL: https://<account>.<instance>.evergage.com. Só para ferramentas pers_*.",
+      "required": false,
+      "sensitive": false
+    },
+    "mcp_pers_instance": {
+      "type": "string",
+      "title": "Personalization — Instance (opcional)",
+      "description": "Pod/região na URL (ex: us-5). Só para ferramentas pers_*.",
+      "required": false,
+      "sensitive": false
+    },
+    "mcp_pers_dataset": {
+      "type": "string",
+      "title": "Personalization — Dataset (opcional)",
+      "description": "Dataset alvo das operações. Só para ferramentas pers_*.",
+      "required": false,
+      "sensitive": false
+    },
+    "mcp_pers_api_key_id": {
+      "type": "string",
+      "title": "Personalization — API Key ID (opcional)",
+      "description": "API Token (Security > API Tokens) no Personalization. Só para ferramentas pers_*.",
+      "required": false,
+      "sensitive": true
+    },
+    "mcp_pers_api_secret": {
+      "type": "string",
+      "title": "Personalization — API Secret (opcional)",
+      "description": "Secret do API Token no Personalization. Só para ferramentas pers_*.",
+      "required": false,
+      "sensitive": true
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "runtimes": {
+      "node": ">=18.0.0"
+    },
+    "platforms": ["darwin", "win32", "linux"]
+  }
+}
