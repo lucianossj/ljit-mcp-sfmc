@@ -44,7 +44,7 @@ export class DeSoapService {
    */
   async createDataExtensionFolder({ name, parentId, description }: { name: string; parentId?: number; description?: string }): Promise<any> {
     const bodyXml = `<CreateRequest xmlns=\"http://exacttarget.com/wsdl/partnerAPI\">
-      <Objects xsi:type=\"Folder\">
+      <Objects xsi:type=\"DataFolder\">
         <Name>${escapeXml(name)}</Name>
         <ContentType>dataextension</ContentType>
         <IsEditable>true</IsEditable>
@@ -60,36 +60,30 @@ export class DeSoapService {
   constructor(private readonly soap: SfmcSoapService) {}
 
   /**
-   * Lista pastas de Data Extension via SOAP (ContentType = "dataextension").
+   * Lista pastas via SOAP. Sem parentId, filtra por ContentType = "dataextension";
+   * com parentId, lista os filhos diretos dessa pasta. O ObjectType correto é
+   * "DataFolder" ("Folder" é inválido na API). Paginação tratada pelo retrieve().
    * @param parentId Opcional: filtra por pasta pai
    */
-  async listDataExtensionFolders(parentId?: number): Promise<any[]> {
-    const filter = parentId
-      ? `<Filter xsi:type="SimpleFilterPart">
-           <Property>ParentFolder.ID</Property>
-           <SimpleOperator>equals</SimpleOperator>
-           <Value>${parentId}</Value>
-         </Filter>`
-      : `<Filter xsi:type="SimpleFilterPart">
-           <Property>ContentType</Property>
-           <SimpleOperator>equals</SimpleOperator>
-           <Value>dataextension</Value>
-         </Filter>`;
+  async listDataExtensionFolders(parentId?: number): Promise<Array<Record<string, unknown>>> {
+    const filterXml =
+      parentId !== undefined
+        ? `<Filter xsi:type="SimpleFilterPart"><Property>ParentFolder.ID</Property><SimpleOperator>equals</SimpleOperator><Value>${parentId}</Value></Filter>`
+        : `<Filter xsi:type="SimpleFilterPart"><Property>ContentType</Property><SimpleOperator>equals</SimpleOperator><Value>dataextension</Value></Filter>`;
 
-    const bodyXml = `<RetrieveRequestMsg xmlns="http://exacttarget.com/wsdl/partnerAPI">
-      <RetrieveRequest>
-        <ObjectType>Folder</ObjectType>
-        <Properties>ID</Properties>
-        <Properties>Name</Properties>
-        <Properties>ContentType</Properties>
-        <Properties>ParentFolder.ID</Properties>
-        <Properties>Description</Properties>
-        ${filter}
-      </RetrieveRequest>
-    </RetrieveRequestMsg>`;
+    const { results } = await this.soap.retrieve(
+      'DataFolder',
+      ['ID', 'Name', 'ContentType', 'ParentFolder.ID', 'Description'],
+      filterXml,
+    );
 
-    const response = await this.soap.soapRequest('Retrieve', bodyXml);
-    return (response?.Results as any[]) ?? [];
+    return results.map((f) => ({
+      id: f['ID'],
+      name: f['Name'],
+      contentType: f['ContentType'],
+      parentId: (f['ParentFolder'] as Record<string, unknown> | undefined)?.['ID'],
+      description: f['Description'],
+    }));
   }
 
   async createDataExtension(body: DeSoapCreateBody): Promise<unknown> {

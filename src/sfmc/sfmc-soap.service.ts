@@ -76,6 +76,68 @@ export class SfmcSoapService {
     }
   }
 
+  /**
+   * Retrieve genérico via SOAP com paginação automática: enquanto
+   * OverallStatus = "MoreDataAvailable", reenvia com <ContinueRequest>{RequestID}</ContinueRequest>
+   * e consolida todos os Results. Reutilizável para qualquer ObjectType (DataFolder, DataExtension…).
+   */
+  async retrieve(
+    objectType: string,
+    properties: string[],
+    filterXml = '',
+  ): Promise<{ results: Array<Record<string, unknown>>; overallStatus: string; truncated: boolean }> {
+    const props = properties.map((p) => `<Properties>${p}</Properties>`).join('');
+    const wrap = (inner: string) =>
+      `<RetrieveRequestMsg xmlns="http://exacttarget.com/wsdl/partnerAPI"><RetrieveRequest>${inner}</RetrieveRequest></RetrieveRequestMsg>`;
+
+    const MAX_CONTINUES = 40;
+    const results: Array<Record<string, unknown>> = [];
+
+    let page = this.parseRetrieve(
+      await this.soapRequest('Retrieve', wrap(`<ObjectType>${objectType}</ObjectType>${props}${filterXml}`)),
+    );
+    results.push(...page.results);
+
+    let continues = 0;
+    while (page.overallStatus === 'MoreDataAvailable' && page.requestId && continues < MAX_CONTINUES) {
+      page = this.parseRetrieve(
+        await this.soapRequest(
+          'Retrieve',
+          wrap(`<ContinueRequest>${escapeXml(page.requestId)}</ContinueRequest><ObjectType>${objectType}</ObjectType>${props}`),
+        ),
+      );
+      results.push(...page.results);
+      continues++;
+    }
+
+    const truncated = page.overallStatus === 'MoreDataAvailable' && continues >= MAX_CONTINUES;
+    if (truncated) {
+      process.stderr.write(
+        `[sfmc] SOAP retrieve ${objectType} atingiu MAX_CONTINUES (${MAX_CONTINUES}) — resultado pode estar incompleto\n`,
+      );
+    }
+    return { results, overallStatus: page.overallStatus, truncated };
+  }
+
+  private parseRetrieve(body: Record<string, unknown>): {
+    results: Array<Record<string, unknown>>;
+    overallStatus: string;
+    requestId?: string;
+  } {
+    const msg = (this.dig(body, 'RetrieveResponseMsg') as Record<string, unknown> | undefined) ?? body;
+    const raw = msg['Results'];
+    const results = (Array.isArray(raw) ? raw : raw ? [raw] : []) as Array<Record<string, unknown>>;
+    const overallStatus = String(msg['OverallStatus'] ?? '');
+    if (overallStatus.startsWith('Error')) {
+      throw new SfmcApiError(400, `SOAP Retrieve falhou: ${overallStatus}`);
+    }
+    return {
+      results,
+      overallStatus,
+      requestId: msg['RequestID'] ? String(msg['RequestID']) : undefined,
+    };
+  }
+
   private extractBody(parsed: Record<string, unknown>): Record<string, unknown> {
     const envelope = this.dig(parsed, 'Envelope') as Record<string, unknown> | undefined;
     if (envelope) {
