@@ -98,6 +98,19 @@ Cliente MCP (Claude, Cursor…)
 | `txn_send_push` | Envia push notification transacional para um contato |
 | `txn_get_message_status` | Consulta o status de entrega de uma mensagem enviada anteriormente |
 
+### Personalization (`pers_*`)
+
+Integração com o **Marketing Cloud Personalization** (ex-Interaction Studio / Evergage) — produto separado do SFMC core, com autenticação (Basic) e base URL (`*.evergage.com`) próprias. Atualmente apenas operações de **leitura**.
+
+| Ferramenta | O que faz |
+|---|---|
+| `pers_export_users` | Exporta usuários de um dataset (uma página): atributos, segmentos, engagement scores e atividade. Paginação manual via `page`/`pageSize` |
+| `pers_export_accounts` | Exporta contas (account-level) de um dataset (uma página): segmentos, scores e atividade |
+| `pers_user_lookup` | Busca um usuário pelo primary user ID ou anonymous ID (GDPR Right of Access) |
+| `pers_audit_log` | Lista logs de acesso/atividade (range máx 50 dias); requer permissão "Can access Audit logs" no token |
+
+> Operações de escrita (eventos, recomendações) e GDPR delete estão planejadas mas não expostas enquanto a integração aponta para dados de produção.
+
 ---
 
 ## Pré-requisitos
@@ -129,6 +142,18 @@ SFMC_CLIENT_SECRET=seu_client_secret
 SFMC_SUBDOMAIN=seu_subdomain          # ex: mcXXXXXXX (sem .auth.marketingcloudapis.com)
 SFMC_ACCOUNT_ID=123456789             # opcional — necessário para acesso a child BUs
 SFMC_REQUEST_TIMEOUT_MS=30000         # opcional — timeout de cada requisição HTTP em ms (padrão: 30000)
+```
+
+Opcional — apenas para as ferramentas de **Personalization** (`pers_*`):
+
+```env
+MCP_PERS_ACCOUNT=seu_account            # parte da URL: https://<account>.<instance>.evergage.com
+MCP_PERS_INSTANCE=us-5                   # pod/região na URL
+MCP_PERS_BASE_URL=                       # opcional — base URL inteira (domínio consolidado); ignora ACCOUNT/INSTANCE
+MCP_PERS_DATASET=seu_dataset             # dataset alvo das operações
+MCP_PERS_API_KEY_ID=sua_api_key_id       # Security > API Tokens
+MCP_PERS_API_SECRET=seu_api_secret       # exibido uma única vez ao criar o token
+MCP_PERS_REQUEST_TIMEOUT_MS=30000        # opcional (padrão: 30000)
 ```
 
 > O `SFMC_SUBDOMAIN` é o prefixo da URL de autenticação da sua BU. Você encontra nas configurações da installed package, no campo **Authentication Base URI**: `https://<subdomain>.auth.marketingcloudapis.com`.
