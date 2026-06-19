@@ -116,7 +116,8 @@ Integração com o **Marketing Cloud Personalization** (ex-Interaction Studio / 
 |---|---|
 | `pers_export_users` | Exporta usuários de um dataset (uma página): atributos, segmentos, engagement scores e atividade. Paginação manual via `page`/`pageSize` |
 | `pers_export_accounts` | Exporta contas (account-level) de um dataset (uma página): segmentos, scores e atividade |
-| `pers_user_lookup` | Busca um usuário pelo primary user ID ou anonymous ID (GDPR Right of Access) |
+| `pers_user_lookup` | Busca um usuário pelo primary user ID ou anonymous ID — retorna perfil com engagement score, segmentos, atividade e atributos (GDPR Right of Access / métricas por cliente) |
+| `pers_metrics_summary` | Resumo agregado (aproximação de painel) sobre uma amostra de usuários: engagement (média/min/máx/distribuição), ativos vs inativos, média de ações e top segmentos. Derivado do export, client-side — não são os KPIs nativos do Dashboard |
 | `pers_audit_log` | Lista logs de acesso/atividade (range máx 50 dias); requer permissão "Can access Audit logs" no token |
 
 > Operações de escrita (eventos, recomendações) e GDPR delete estão planejadas mas não expostas enquanto a integração aponta para dados de produção.

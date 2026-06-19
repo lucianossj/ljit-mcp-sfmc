@@ -59,6 +59,22 @@ export class PersonalizationToolsService {
     );
 
     server.tool(
+      'pers_metrics_summary',
+      'Resumo agregado (aproximação de painel) sobre uma amostra de usuários exportados: engagement score (média/min/máx/distribuição), atividade (ativos vs inativos por lastActivity, média de ações) e top segmentos por nº de usuários. ' +
+      'É derivado do export, calculado client-side — NÃO são os KPIs nativos do Dashboard (revenue/conversão/impressões não têm API). ' +
+      'Limitado por maxRecords; truncated=true indica que há mais dados além da amostra. Use filter/segmentId para focar um segmento. Somente leitura.',
+      {
+        dataset: z.string().optional().describe('Dataset alvo (padrão: MCP_PERS_DATASET)'),
+        filter: z.string().optional().describe('Nome ou ID de segmento para limitar a amostra'),
+        segmentId: z.string().optional().describe('ID do segmento'),
+        activeWithinDays: z.number().optional().describe('Janela em dias para considerar "ativo" pela lastActivity (padrão: 30)'),
+        maxRecords: z.number().optional().describe('Teto de registros agregados (padrão: 1000, máx: 50000)'),
+        pageSize: z.number().optional().describe('Tamanho de página do export (padrão: 200, máx: 1000)'),
+      },
+      toolCall((params) => this.pers.metricsSummary(params)),
+    );
+
+    server.tool(
       'pers_audit_log',
       'Lista logs de acesso e atividade do Personalization. Range máximo de 50 dias; pageSize máx 2000. Requer permissão "Can access Audit logs" no token. Somente leitura.',
       {
